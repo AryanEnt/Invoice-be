@@ -1,0 +1,709 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ---------------------------------------------------------------------------
+// Enums
+// ---------------------------------------------------------------------------
+
+enum UserRole {
+  SUPER_ADMIN
+  ADMIN
+  MEMBER
+}
+
+enum AccountStatus {
+  ACTIVE
+  INACTIVE
+}
+
+enum InvoiceStatus {
+  DRAFT
+  SENT
+  VIEWED
+  PARTIALLY_PAID
+  PAID
+  OVERDUE
+  CANCELLED
+}
+
+enum InvoiceEmailStatus {
+  NOT_SENT
+  SENT
+  FAILED
+}
+
+enum QuoteStatus {
+  DRAFT
+  SENT
+  ACCEPTED
+  DECLINED
+  EXPIRED
+  CANCELLED
+}
+
+enum PaymentStatus {
+  PENDING
+  COMPLETED
+  FAILED
+  REFUNDED
+  CANCELLED
+}
+
+enum PaymentProvider {
+  MANUAL
+  STRIPE
+  PAYPAL
+}
+
+enum PaymentMethod {
+  CASH
+  BANK_TRANSFER
+  CHECK
+  OTHER
+  CARD
+}
+
+enum CatalogKind {
+  PRODUCT
+  SERVICE
+}
+
+// ---------------------------------------------------------------------------
+// Identity and tenancy
+// ---------------------------------------------------------------------------
+
+model Organization {
+  id            String   @id @default(uuid())
+  name          String
+  slug          String   @unique
+  logoObjectKey String?
+  isActive      Boolean  @default(true)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  users              User[]
+  customers          Customer[]
+  products           Product[]
+  services           Service[]
+  taxes              Tax[]
+  invoices           Invoice[]
+  quotes             Quote[]
+  payments           Payment[]
+  expenses           Expense[]
+  expenseCategories  ExpenseCategory[]
+  invoiceTemplates   InvoiceTemplate[]
+  notifications      Notification[]
+  activityLogs       ActivityLog[]
+  auditLogs          AuditLog[]
+  settings           OrganizationSetting[]
+
+  @@index([isActive])
+  @@map("organizations")
+}
+
+model User {
+  id                   String        @id @default(uuid())
+  email                String        @unique
+  passwordHash         String
+  firstName            String
+  lastName             String
+  phone                String?
+  avatarObjectKey      String?
+  role                 UserRole
+  status               AccountStatus @default(ACTIVE)
+  organizationId       String?
+  administratorId      String?
+  lastLoginAt          DateTime?
+  passwordResetToken   String?       @unique
+  passwordResetExpires DateTime?
+  createdAt            DateTime      @default(now())
+  updatedAt            DateTime      @updatedAt
+
+  organization       Organization?   @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  administrator      User?           @relation("AdministratorMembers", fields: [administratorId], references: [id], onDelete: Restrict)
+  managedMembers     User[]          @relation("AdministratorMembers")
+  managedCustomers   Customer[]      @relation("AdministratorCustomers")
+  sessions           Session[]
+  createdInvoices    Invoice[]       @relation("InvoiceCreatedBy")
+  assignedInvoices   Invoice[]       @relation("InvoiceAssignedTo")
+  createdQuotes      Quote[]         @relation("QuoteCreatedBy")
+  recordedPayments   Payment[]       @relation("PaymentRecordedBy")
+  createdExpenses    Expense[]       @relation("ExpenseCreatedBy")
+  notifications      Notification[]
+  activityLogs       ActivityLog[]
+  auditLogs          AuditLog[]      @relation("AuditActor")
+
+  @@index([organizationId])
+  @@index([administratorId])
+  @@index([role])
+  @@index([status])
+  @@map("users")
+}
+
+model Role {
+  id          String   @id @default(uuid())
+  name        UserRole @unique
+  description String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  permissions RolePermission[]
+
+  @@map("roles")
+}
+
+model Session {
+  id        String   @id @default(uuid())
+  userId    String
+  tokenHash String   @unique
+  expiresAt DateTime
+  ipAddress String?
+  userAgent String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([expiresAt])
+  @@map("sessions")
+}
+
+model OrganizationSetting {
+  id             String   @id @default(uuid())
+  organizationId String
+  key            String
+  value          String
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, key])
+  @@index([organizationId])
+  @@map("organization_settings")
+}
+
+model Address {
+  id         String   @id @default(uuid())
+  line1      String
+  line2      String?
+  city       String
+  region     String?
+  postalCode String?
+  country    String
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  customerBilling  Customer[] @relation("CustomerBillingAddress")
+  customerShipping Customer[] @relation("CustomerShippingAddress")
+  invoiceBilling   Invoice[]  @relation("InvoiceBillingAddress")
+  invoiceShipping  Invoice[]  @relation("InvoiceShippingAddress")
+  quoteBilling     Quote[]    @relation("QuoteBillingAddress")
+  quoteShipping    Quote[]    @relation("QuoteShippingAddress")
+
+  @@index([country, city])
+  @@map("addresses")
+}
+
+model Permission {
+  id          String   @id @default(uuid())
+  code        String   @unique
+  description String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  roles RolePermission[]
+
+  @@map("permissions")
+}
+
+model RolePermission {
+  roleId       String
+  permissionId String
+  createdAt    DateTime @default(now())
+
+  role       Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  permission Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  @@id([roleId, permissionId])
+  @@index([permissionId])
+  @@map("role_permissions")
+}
+
+// ---------------------------------------------------------------------------
+// Catalog and customers
+// ---------------------------------------------------------------------------
+
+model Customer {
+  id                String   @id @default(uuid())
+  organizationId    String
+  administratorId   String?
+  name              String
+  company           String?
+  email             String?
+  phone             String?
+  taxNumber         String?
+  billingAddressId  String?
+  shippingAddressId String?
+  notes             String?
+  isActive          Boolean  @default(true)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  organization    Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  administrator   User?        @relation("AdministratorCustomers", fields: [administratorId], references: [id], onDelete: SetNull)
+  billingAddress  Address?     @relation("CustomerBillingAddress", fields: [billingAddressId], references: [id], onDelete: SetNull)
+  shippingAddress Address?     @relation("CustomerShippingAddress", fields: [shippingAddressId], references: [id], onDelete: SetNull)
+  invoices        Invoice[]
+  quotes          Quote[]
+  payments        Payment[]
+
+  @@index([organizationId])
+  @@index([administratorId])
+  @@index([organizationId, email])
+  @@index([isActive])
+  @@index([billingAddressId])
+  @@index([shippingAddressId])
+  @@map("customers")
+}
+
+model Product {
+  id             String      @id @default(uuid())
+  organizationId String
+  kind           CatalogKind @default(PRODUCT)
+  name           String
+  description    String?
+  sku            String?
+  unit           String?
+  unitPrice      Decimal     @db.Decimal(19, 4)
+  currency       String      @default("USD")
+  taxRate        Decimal?    @db.Decimal(7, 4)
+  taxId          String?
+  isActive       Boolean     @default(true)
+  createdAt      DateTime    @default(now())
+  updatedAt      DateTime    @updatedAt
+
+  organization Organization  @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  tax          Tax?          @relation(fields: [taxId], references: [id], onDelete: SetNull)
+  invoiceItems InvoiceItem[]
+  quoteItems   QuoteItem[]
+
+  @@index([organizationId])
+  @@index([organizationId, sku])
+  @@index([organizationId, kind])
+  @@index([taxId])
+  @@map("products")
+}
+
+model Service {
+  id             String   @id @default(uuid())
+  organizationId String
+  name           String
+  description    String?
+  unitPrice      Decimal  @db.Decimal(19, 4)
+  currency       String   @default("USD")
+  taxId          String?
+  isActive       Boolean  @default(true)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization Organization  @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  tax          Tax?          @relation(fields: [taxId], references: [id], onDelete: SetNull)
+  invoiceItems InvoiceItem[]
+  quoteItems   QuoteItem[]
+
+  @@index([organizationId])
+  @@index([taxId])
+  @@map("services")
+}
+
+model Tax {
+  id             String   @id @default(uuid())
+  organizationId String
+  name           String
+  rate           Decimal  @db.Decimal(7, 4)
+  isActive       Boolean  @default(true)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization Organization  @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  products     Product[]
+  services     Service[]
+  invoiceItems InvoiceItem[]
+  quoteItems   QuoteItem[]
+
+  @@unique([organizationId, name])
+  @@index([organizationId])
+  @@map("taxes")
+}
+
+// ---------------------------------------------------------------------------
+// Invoices and quotes
+// ---------------------------------------------------------------------------
+
+model Invoice {
+  id                String        @id @default(uuid())
+  organizationId    String
+  customerId        String
+  createdById       String
+  assignedMemberId  String?
+  invoiceNumber     String
+  status            InvoiceStatus @default(DRAFT)
+  invoiceDate       DateTime
+  dueDate           DateTime
+  currency          String        @default("USD")
+  subtotal          Decimal       @db.Decimal(19, 4)
+  discountAmount    Decimal       @default(0) @db.Decimal(19, 4)
+  taxAmount         Decimal       @default(0) @db.Decimal(19, 4)
+  total             Decimal       @db.Decimal(19, 4)
+  amountPaid        Decimal       @default(0) @db.Decimal(19, 4)
+  notes             String?
+  terms             String?
+  billingAddressId  String?
+  shippingAddressId String?
+  shareToken        String?             @unique
+  pdfObjectKey      String?
+  emailStatus       InvoiceEmailStatus  @default(NOT_SENT)
+  emailSentAt       DateTime?
+  emailLastError    String?
+  sentAt            DateTime?
+  viewedAt          DateTime?
+  createdAt         DateTime      @default(now())
+  updatedAt         DateTime      @updatedAt
+
+  organization    Organization  @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  customer        Customer      @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  createdBy       User          @relation("InvoiceCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
+  assignedMember  User?         @relation("InvoiceAssignedTo", fields: [assignedMemberId], references: [id], onDelete: SetNull)
+  billingAddress  Address?      @relation("InvoiceBillingAddress", fields: [billingAddressId], references: [id], onDelete: SetNull)
+  shippingAddress Address?      @relation("InvoiceShippingAddress", fields: [shippingAddressId], references: [id], onDelete: SetNull)
+  items           InvoiceItem[]
+  payments        Payment[]
+
+  @@unique([organizationId, invoiceNumber])
+  @@index([organizationId])
+  @@index([customerId])
+  @@index([createdById])
+  @@index([assignedMemberId])
+  @@index([status])
+  @@index([dueDate])
+  @@index([invoiceDate])
+  @@index([organizationId, invoiceDate])
+  @@index([organizationId, status])
+  @@index([billingAddressId])
+  @@index([shippingAddressId])
+  @@map("invoices")
+}
+
+model InvoiceItem {
+  id          String       @id @default(uuid())
+  invoiceId   String
+  productId   String?
+  serviceId   String?
+  taxId       String?
+  catalogKind CatalogKind?
+  sku         String?
+  unit        String?
+  description String
+  quantity    Decimal      @db.Decimal(19, 4)
+  unitPrice   Decimal      @db.Decimal(19, 4)
+  discount    Decimal      @default(0) @db.Decimal(19, 4)
+  taxRate     Decimal?     @db.Decimal(7, 4)
+  taxAmount   Decimal      @default(0) @db.Decimal(19, 4)
+  lineTotal   Decimal      @db.Decimal(19, 4)
+  sortOrder   Int          @default(0)
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+
+  invoice Invoice  @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  product Product? @relation(fields: [productId], references: [id], onDelete: SetNull)
+  service Service? @relation(fields: [serviceId], references: [id], onDelete: SetNull)
+  tax     Tax?     @relation(fields: [taxId], references: [id], onDelete: SetNull)
+
+  @@index([invoiceId])
+  @@index([productId])
+  @@index([serviceId])
+  @@map("invoice_items")
+}
+
+model Quote {
+  id              String      @id @default(uuid())
+  organizationId  String
+  customerId      String
+  createdById     String
+  quoteNumber     String
+  status          QuoteStatus @default(DRAFT)
+  issueDate       DateTime
+  validUntil      DateTime?
+  currency        String      @default("USD")
+  subtotal        Decimal     @db.Decimal(19, 4)
+  discountAmount  Decimal     @default(0) @db.Decimal(19, 4)
+  taxAmount       Decimal     @default(0) @db.Decimal(19, 4)
+  total           Decimal     @db.Decimal(19, 4)
+  notes             String?
+  terms             String?
+  billingAddressId  String?
+  shippingAddressId String?
+  sentAt            DateTime?
+  createdAt         DateTime    @default(now())
+  updatedAt         DateTime    @updatedAt
+
+  organization    Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  customer        Customer     @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  createdBy       User         @relation("QuoteCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
+  billingAddress  Address?     @relation("QuoteBillingAddress", fields: [billingAddressId], references: [id], onDelete: SetNull)
+  shippingAddress Address?     @relation("QuoteShippingAddress", fields: [shippingAddressId], references: [id], onDelete: SetNull)
+  items           QuoteItem[]
+
+  @@unique([organizationId, quoteNumber])
+  @@index([organizationId])
+  @@index([customerId])
+  @@index([createdById])
+  @@index([status])
+  @@index([billingAddressId])
+  @@index([shippingAddressId])
+  @@map("quotes")
+}
+
+model QuoteItem {
+  id          String   @id @default(uuid())
+  quoteId     String
+  productId   String?
+  serviceId   String?
+  taxId       String?
+  description String
+  quantity    Decimal  @db.Decimal(19, 4)
+  unitPrice   Decimal  @db.Decimal(19, 4)
+  discount    Decimal  @default(0) @db.Decimal(19, 4)
+  taxAmount   Decimal  @default(0) @db.Decimal(19, 4)
+  lineTotal   Decimal  @db.Decimal(19, 4)
+  sortOrder   Int      @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  quote   Quote    @relation(fields: [quoteId], references: [id], onDelete: Cascade)
+  product Product? @relation(fields: [productId], references: [id], onDelete: SetNull)
+  service Service? @relation(fields: [serviceId], references: [id], onDelete: SetNull)
+  tax     Tax?     @relation(fields: [taxId], references: [id], onDelete: SetNull)
+
+  @@index([quoteId])
+  @@index([productId])
+  @@index([serviceId])
+  @@map("quote_items")
+}
+
+model InvoiceTemplate {
+  id             String   @id @default(uuid())
+  organizationId String
+  name           String
+  isDefault      Boolean  @default(false)
+  config         Json
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+
+  @@unique([organizationId, name])
+  @@index([organizationId])
+  @@map("invoice_templates")
+}
+
+// ---------------------------------------------------------------------------
+// Payments — provider adapters live in src/integrations/payments
+// Invoice/payment domain must not import Stripe or PayPal SDKs.
+// ---------------------------------------------------------------------------
+
+model Payment {
+  id                    String          @id @default(uuid())
+  organizationId        String
+  invoiceId             String
+  customerId            String
+  recordedById          String
+  amount                Decimal         @db.Decimal(19, 4)
+  currency              String          @default("USD")
+  method                PaymentMethod   @default(OTHER)
+  provider              PaymentProvider @default(MANUAL)
+  providerTransactionId String?
+  status                PaymentStatus   @default(PENDING)
+  paidAt                DateTime?
+  notes                 String?
+  createdAt             DateTime        @default(now())
+  updatedAt             DateTime        @updatedAt
+
+  organization Organization         @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  invoice      Invoice              @relation(fields: [invoiceId], references: [id], onDelete: Restrict)
+  customer     Customer             @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  recordedBy   User                 @relation("PaymentRecordedBy", fields: [recordedById], references: [id], onDelete: Restrict)
+  transactions PaymentTransaction[]
+
+  @@index([organizationId])
+  @@index([invoiceId])
+  @@index([customerId])
+  @@index([recordedById])
+  @@index([provider, status])
+  @@index([paidAt])
+  @@index([organizationId, paidAt])
+  @@map("payments")
+}
+
+model PaymentTransaction {
+  id                String          @id @default(uuid())
+  paymentId         String
+  provider          PaymentProvider
+  providerReference String?
+  status            PaymentStatus
+  amount            Decimal         @db.Decimal(19, 4)
+  currency          String
+  metadata          Json?
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+
+  payment Payment @relation(fields: [paymentId], references: [id], onDelete: Cascade)
+
+  @@index([paymentId])
+  @@index([provider, providerReference])
+  @@map("payment_transactions")
+}
+
+model PaymentWebhook {
+  id          String          @id @default(uuid())
+  provider    PaymentProvider
+  eventId     String
+  payload     Json
+  processed   Boolean         @default(false)
+  processedAt DateTime?
+  error       String?
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
+
+  @@unique([provider, eventId])
+  @@index([processed])
+  @@map("payment_webhooks")
+}
+
+// ---------------------------------------------------------------------------
+// Expenses
+// ---------------------------------------------------------------------------
+
+model ExpenseCategory {
+  id             String   @id @default(uuid())
+  organizationId String
+  name           String
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  expenses     Expense[]
+
+  @@unique([organizationId, name])
+   @@map("expense_categories")
+}
+
+model Expense {
+  id             String   @id @default(uuid())
+  organizationId String
+  categoryId     String
+  createdById    String
+  amount         Decimal  @db.Decimal(19, 4)
+  currency       String   @default("USD")
+  incurredOn     DateTime
+  vendor         String?
+  notes          String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization Organization    @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  category     ExpenseCategory @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+  createdBy    User            @relation("ExpenseCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
+
+  @@index([organizationId])
+  @@index([categoryId])
+  @@index([createdById])
+  @@index([incurredOn])
+  @@index([organizationId, incurredOn])
+  @@map("expenses")
+}
+
+// ---------------------------------------------------------------------------
+// Notifications, activity, audit, settings
+// ---------------------------------------------------------------------------
+
+model Notification {
+  id             String   @id @default(uuid())
+  userId         String
+  organizationId String?
+  type           String
+  title          String
+  body           String
+  isRead         Boolean  @default(false)
+  metadata       Json?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  organization Organization? @relation(fields: [organizationId], references: [id], onDelete: SetNull)
+
+  @@index([userId, isRead])
+  @@index([organizationId])
+  @@map("notifications")
+}
+
+model ActivityLog {
+  id             String   @id @default(uuid())
+  organizationId String
+  actorId        String
+  action         String
+  entity         String
+  entityId       String
+  metadata       Json?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  actor        User         @relation(fields: [actorId], references: [id], onDelete: Restrict)
+
+  @@index([organizationId, createdAt])
+  @@index([actorId])
+  @@index([entity, entityId])
+  @@map("activity_logs")
+}
+
+model AuditLog {
+  id             String   @id @default(uuid())
+  organizationId String?
+  actorId        String
+  action         String
+  entity         String
+  entityId       String
+  metadata       Json?
+  ipAddress      String?
+  userAgent      String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization Organization? @relation(fields: [organizationId], references: [id], onDelete: SetNull)
+  actor        User          @relation("AuditActor", fields: [actorId], references: [id], onDelete: Restrict)
+
+  @@index([organizationId, createdAt])
+  @@index([actorId])
+  @@index([entity, entityId])
+  @@index([action])
+  @@map("audit_logs")
+}
+
+model SystemSetting {
+  id        String   @id @default(uuid())
+  key       String   @unique
+  value     Json
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("system_settings")
+}
