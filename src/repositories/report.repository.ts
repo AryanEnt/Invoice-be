@@ -224,7 +224,7 @@ async function loadPaymentReport(input: {
 }> {
   const [methods, payments] = await Promise.all([
     prisma.payment.groupBy({
-      by: ["method"],
+      by: ["provider"],
       where: input.paymentWhere,
       _sum: { amount: true },
       _count: { _all: true },
@@ -241,12 +241,17 @@ async function loadPaymentReport(input: {
       .map((row) => ({ at: row.paidAt as Date, amount: row.amount.toString() })),
     input.range,
   );
+  const providerLabel: Record<string, string> = {
+    PAYPAL: "PayPal",
+    STRIPE: "Stripe",
+    MANUAL: "Other",
+  };
   const breakdown = methods.map((row) => ({
-    label: row.method,
+    label: providerLabel[row.provider] ?? row.provider,
     value: moneyString(row._sum.amount?.toString() ?? "0"),
   }));
   const tableRows = methods.map((row) => ({
-    method: row.method.replaceAll("_", " "),
+    method: providerLabel[row.provider] ?? row.provider,
     count: String(row._count._all),
     amount: moneyString(row._sum.amount?.toString() ?? "0"),
   }));

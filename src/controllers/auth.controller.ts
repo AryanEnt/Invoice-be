@@ -47,16 +47,14 @@ export async function loginController(req: Request, res: Response): Promise<void
 }
 
 export async function logoutController(req: Request, res: Response): Promise<void> {
-  if (!req.authUser) {
-    throw new UnauthorizedError();
+  if (req.authUser) {
+    await logout({
+      token: readSessionToken(req),
+      actorId: req.authUser.id,
+      organizationId: req.authUser.organizationId,
+      ...requestMeta(req),
+    });
   }
-
-  await logout({
-    token: readSessionToken(req),
-    actorId: req.authUser.id,
-    organizationId: req.authUser.organizationId,
-    ...requestMeta(req),
-  });
 
   clearSessionCookie(res);
   res.status(200).json(success({ loggedOut: true }));

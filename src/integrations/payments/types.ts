@@ -32,6 +32,21 @@ export interface PaymentSessionResult {
   providerTransactionId: string;
   amount: string;
   currency: string;
+  checkoutUrl?: string;
+}
+
+export interface CapturePaymentInput {
+  providerTransactionId: string;
+  metadata?: Record<string, unknown>;
+}
+
+export interface CapturePaymentResult {
+  provider: PaymentProviderName;
+  status: ProviderPaymentStatus;
+  providerTransactionId: string;
+  captureId?: string;
+  amount?: string;
+  currency?: string;
 }
 
 export interface VerifyPaymentInput {
@@ -67,6 +82,14 @@ export interface WebhookResult {
   provider: PaymentProviderName;
   eventId: string;
   processed: boolean;
+  eventType?: string;
+  orderId?: string;
+  captureId?: string;
+  status?: ProviderPaymentStatus;
+  amount?: string;
+  currency?: string;
+  invoiceId?: string;
+  merchantId?: string;
 }
 
 /**
@@ -78,6 +101,7 @@ export interface PaymentProvider {
   readonly implemented: boolean;
 
   createPaymentSession(input: CreatePaymentSessionInput): Promise<PaymentSessionResult>;
+  capturePayment(input: CapturePaymentInput): Promise<CapturePaymentResult>;
   verifyPayment(input: VerifyPaymentInput): Promise<VerifyPaymentResult>;
   refundPayment(input: RefundPaymentInput): Promise<RefundPaymentResult>;
   handleWebhook(input: HandleWebhookInput): Promise<WebhookResult>;

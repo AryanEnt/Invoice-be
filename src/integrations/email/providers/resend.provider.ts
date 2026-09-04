@@ -77,6 +77,7 @@ export class ResendEmailProvider implements EmailProvider {
           companyPhone: payload.companyPhone,
           showPaymentButton: false,
           paymentUrl: payload.paymentUrl,
+          paymentReceipt: payload.paymentReceipt,
         }),
         attachments: payload.attachments?.map((attachment) => ({
           filename: attachment.filename,

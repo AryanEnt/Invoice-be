@@ -4,14 +4,30 @@ import {
   getEmailTemplatesController,
   getInvoiceSettingsController,
   getOrganizationSettingsController,
-  getPayPalConnectUrlController,
   createOrganizationLogoUploadUrlController,
   removeOrganizationLogoController,
   updateEmailTemplatesController,
   updateInvoiceSettingsController,
   uploadOrganizationLogoController,
 } from "../controllers/settings.controller.js";
+import {
+  disconnectPayPalController,
+  getPayPalGatewayStatusController,
+  payPalOAuthCallbackController,
+  startPayPalConnectController,
+  testPayPalConnectionController,
+} from "../controllers/paypal.controller.js";
+import {
+  disconnectStripeController,
+  getStripeGatewayStatusController,
+  startStripeConnectController,
+  stripeOAuthCallbackController,
+  testStripeConnectionController,
+} from "../controllers/stripe.controller.js";
 import { Permissions } from "../config/permissions.js";
+import { optionalAuth } from "../middleware/optional-auth.js";
+import { paypalConnectRateLimit } from "../middleware/paypal-rate-limit.js";
+import { stripeConnectRateLimit } from "../middleware/stripe-rate-limit.js";
 import { requireAuth } from "../middleware/require-auth.js";
 import { requirePermission } from "../middleware/require-permission.js";
 import { requireRole } from "../middleware/require-role.js";
@@ -101,11 +117,83 @@ settingsRouter.delete(
 );
 
 settingsRouter.get(
+  "/payment/paypal",
+  requireAuth,
+  requireRole("SUPER_ADMIN"),
+  requirePermission(Permissions.SETTINGS_VIEW),
+  asyncHandler(getPayPalGatewayStatusController),
+);
+
+settingsRouter.post(
   "/payment/paypal/connect",
   requireAuth,
   requireRole("SUPER_ADMIN"),
   requirePermission(Permissions.SETTINGS_UPDATE),
-  asyncHandler(getPayPalConnectUrlController),
+  paypalConnectRateLimit,
+  asyncHandler(startPayPalConnectController),
+);
+
+settingsRouter.get(
+  "/payment/paypal/callback",
+  optionalAuth,
+  asyncHandler(payPalOAuthCallbackController),
+);
+
+settingsRouter.post(
+  "/payment/paypal/test",
+  requireAuth,
+  requireRole("SUPER_ADMIN"),
+  requirePermission(Permissions.SETTINGS_UPDATE),
+  paypalConnectRateLimit,
+  asyncHandler(testPayPalConnectionController),
+);
+
+settingsRouter.post(
+  "/payment/paypal/disconnect",
+  requireAuth,
+  requireRole("SUPER_ADMIN"),
+  requirePermission(Permissions.SETTINGS_UPDATE),
+  asyncHandler(disconnectPayPalController),
+);
+
+settingsRouter.get(
+  "/payment/stripe",
+  requireAuth,
+  requireRole("SUPER_ADMIN"),
+  requirePermission(Permissions.SETTINGS_VIEW),
+  asyncHandler(getStripeGatewayStatusController),
+);
+
+settingsRouter.post(
+  "/payment/stripe/connect",
+  requireAuth,
+  requireRole("SUPER_ADMIN"),
+  requirePermission(Permissions.SETTINGS_UPDATE),
+  stripeConnectRateLimit,
+  asyncHandler(startStripeConnectController),
+);
+
+settingsRouter.get(
+  "/payment/stripe/callback",
+  optionalAuth,
+  asyncHandler(stripeOAuthCallbackController),
+);
+
+settingsRouter.post(
+  "/payment/stripe/test",
+  requireAuth,
+  requireRole("SUPER_ADMIN"),
+  requirePermission(Permissions.SETTINGS_UPDATE),
+  stripeConnectRateLimit,
+  asyncHandler(testStripeConnectionController),
+);
+
+settingsRouter.post(
+  "/payment/stripe/disconnect",
+  requireAuth,
+  requireRole("SUPER_ADMIN"),
+  requirePermission(Permissions.SETTINGS_UPDATE),
+  asyncHandler(disconnectStripeController),
 );
 
 export { settingsRouter };

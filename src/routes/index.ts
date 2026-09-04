@@ -12,6 +12,7 @@ import { paymentRouter } from "./payment.routes.js";
 import { productRouter } from "./product.routes.js";
 import { publicInvoiceRouter } from "./public-invoice.routes.js";
 import { settingsRouter } from "./settings.routes.js";
+import { stripeRouter } from "./stripe.routes.js";
 
 const apiRouter = Router();
 
@@ -28,5 +29,6 @@ apiRouter.use("/invoices", invoiceRouter);
 apiRouter.use("/payments", paymentRouter);
 apiRouter.use("/products", productRouter);
 apiRouter.use("/settings", settingsRouter);
+apiRouter.use("/stripe", stripeRouter);
 
 export { apiRouter };

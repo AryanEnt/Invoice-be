@@ -19,8 +19,26 @@ const envSchema = z.object({
   BOOTSTRAP_SUPER_ADMIN_PASSWORD: z.string().optional(),
   BOOTSTRAP_SUPER_ADMIN_FIRST_NAME: z.string().optional(),
   BOOTSTRAP_SUPER_ADMIN_LAST_NAME: z.string().optional(),
-  STRIPE_SECRET_KEY: z.string().optional(),
-  STRIPE_WEBHOOK_SECRET: z.string().optional(),
+  STRIPE_SECRET_KEY: z.preprocess(
+    (value) => (value === "" ? undefined : value),
+    z.string().min(1).optional(),
+  ),
+  STRIPE_CLIENT_ID: z.preprocess(
+    (value) => (value === "" ? undefined : value),
+    z.string().min(1).optional(),
+  ),
+  STRIPE_CLIENT_SECRET: z.preprocess(
+    (value) => (value === "" ? undefined : value),
+    z.string().min(1).optional(),
+  ),
+  STRIPE_WEBHOOK_SECRET: z.preprocess(
+    (value) => (value === "" ? undefined : value),
+    z.string().min(1).optional(),
+  ),
+  STRIPE_REDIRECT_URI: z.preprocess(
+    (value) => (value === "" ? undefined : value),
+    z.string().url().optional(),
+  ),
   PAYPAL_CLIENT_ID: z.preprocess(
     (value) => (value === "" ? undefined : value),
     z.string().min(1).optional(),
@@ -29,18 +47,37 @@ const envSchema = z.object({
     (value) => (value === "" ? undefined : value),
     z.string().min(1).optional(),
   ),
-  PAYPAL_ENV: z.preprocess(
-    (value) => (value === "" || value == null ? "sandbox" : value),
-    z.enum(["sandbox", "live"]).default("sandbox"),
+  PAYPAL_ENV: z.preprocess((value) => {
+    const environment = process.env.PAYPAL_ENVIRONMENT;
+    const raw = value === "" || value == null ? environment : value;
+    if (raw === "" || raw == null) {
+      return "sandbox";
+    }
+    if (raw === "production") {
+      return "live";
+    }
+    return raw;
+  }, z.enum(["sandbox", "live"]).default("sandbox")),
+  PAYPAL_WEBHOOK_ID: z.preprocess(
+    (value) => (value === "" ? undefined : value),
+    z.string().min(1).optional(),
   ),
   PAYPAL_REDIRECT_URI: z.preprocess(
     (value) => (value === "" ? undefined : value),
     z.string().url().optional(),
   ),
-  /** Optional full Connect URL override (for temporary/manual testing). */
-  PAYPAL_CONNECT_URL: z.preprocess(
+  /** Kept for compatibility; Connect always uses PayPal-hosted Log in / Connect. */
+  PAYPAL_IDENTITY_CONNECT: z.preprocess((value) => {
+    if (value === "false" || value === "0") return false;
+    return true;
+  }, z.boolean().default(true)),
+  API_URL: z.preprocess(
     (value) => (value === "" ? undefined : value),
     z.string().url().optional(),
+  ),
+  PAYMENT_TOKEN_ENCRYPTION_KEY: z.preprocess(
+    (value) => (value === "" ? undefined : value),
+    z.string().min(32).optional(),
   ),
   RESEND_API_KEY: z.preprocess(
     (value) => (value === "" ? undefined : value),

@@ -37,6 +37,8 @@ import {
 } from "../utils/organization-scope.js";
 import { recordAudit } from "./audit.service.js";
 import { getInvoiceCompanyName } from "./invoice-settings.service.js";
+import { getPublicPayPalOptions } from "./paypal-checkout.service.js";
+import { getPublicStripeOptions } from "./stripe-checkout.service.js";
 import { getOrganizationLogoUrl } from "./organization-logo.service.js";
 import { recordManualPayment } from "./payment.service.js";
 
@@ -628,7 +630,10 @@ export async function getPublicInvoiceByToken(token: string): Promise<PublicInvo
     }),
     getInvoiceCompanyName(record.organizationId),
   ]);
-  return toPublicInvoiceView(record, undefined, logoUrl, companyName);
+  const view = toPublicInvoiceView(record, undefined, logoUrl, companyName);
+  const paypal = await getPublicPayPalOptions(record);
+  const stripe = await getPublicStripeOptions(record);
+  return { ...view, paypal, stripe };
 }
 
 export async function duplicateInvoiceAccount(actor: AuthUser, id: string): Promise<InvoiceView> {

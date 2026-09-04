@@ -94,6 +94,218 @@ export async function listInvoicePayments(invoiceId: string): Promise<PaymentRec
   });
 }
 
+export async function findPaymentByProviderTransactionId(
+  provider: PaymentProvider,
+  providerTransactionId: string,
+): Promise<PaymentRecord | null> {
+  return prisma.payment.findFirst({
+    where: { provider, providerTransactionId },
+    include: paymentInclude,
+  });
+}
+
+export async function createPendingProviderPayment(data: {
+  organizationId: string;
+  invoiceId: string;
+  customerId: string;
+  recordedById: string;
+  amount: string;
+  currency: string;
+  method: PaymentMethod;
+  provider: PaymentProvider;
+  providerTransactionId: string;
+}): Promise<PaymentRecord> {
+  return prisma.payment.create({
+    data: {
+      ...data,
+      status: "PENDING",
+    },
+    include: paymentInclude,
+  });
+}
+
+export async function markProviderPaymentStatus(
+  id: string,
+  status: Extract<PaymentStatus, "FAILED" | "CANCELLED">,
+): Promise<void> {
+  await prisma.payment.update({
+    where: { id },
+    data: { status },
+  });
+}
+
+export async function markPaymentReceiptSent(id: string): Promise<boolean> {
+  const result = await prisma.payment.updateMany({
+    where: { id, receiptSentAt: null },
+    data: { receiptSentAt: new Date() },
+  });
+  return result.count === 1;
+}
+
+export async function completeProviderPayment(data: {
+  organizationId: string;
+  invoiceId: string;
+  customerId: string;
+  recordedById: string;
+  amount: string;
+  currency: string;
+  method: PaymentMethod;
+  provider: PaymentProvider;
+  providerTransactionId: string;
+  captureId?: string;
+  paidAt: Date;
+  notes?: string | null;
+}): Promise<{ payment: PaymentRecord; amountPaid: string; status: InvoiceStatus; alreadyCompleted: boolean }> {
+  return prisma.$transaction(async (tx) => {
+    const locked = await tx.$queryRaw<Array<{ id: string }>>`
+      SELECT id FROM invoices WHERE id = ${data.invoiceId} FOR UPDATE
+    `;
+    if (locked.length === 0) {
+      throw new NotFoundError("Invoice not found");
+    }
+
+    const invoice = await tx.invoice.findUniqueOrThrow({
+      where: { id: data.invoiceId },
+    });
+
+    const existing = await tx.payment.findFirst({
+      where: {
+        provider: data.provider,
+        providerTransactionId: data.providerTransactionId,
+      },
+    });
+
+    if (existing?.status === "COMPLETED") {
+      const record = await tx.payment.findUniqueOrThrow({
+        where: { id: existing.id },
+        include: paymentInclude,
+      });
+      return {
+        payment: record,
+        amountPaid: moneyString(invoice.amountPaid.toString()),
+        status: invoice.status,
+        alreadyCompleted: true,
+      };
+    }
+
+    const completed = await tx.payment.findMany({
+      where: {
+        invoiceId: data.invoiceId,
+        status: "COMPLETED",
+        ...(existing ? { id: { not: existing.id } } : {}),
+      },
+      select: { amount: true },
+    });
+    const recordedPaid = completed.reduce((sum, payment) => sum.plus(payment.amount), money(0));
+    const nextPaid = recordedPaid.plus(data.amount);
+    const total = money(invoice.total.toString());
+    if (nextPaid.gt(total)) {
+      throw new ValidationError("Payment exceeds the invoice balance");
+    }
+
+    const payment = existing
+      ? await tx.payment.update({
+          where: { id: existing.id },
+          data: {
+            amount: data.amount,
+            currency: data.currency,
+            status: "COMPLETED",
+            paidAt: data.paidAt,
+            notes: data.notes ?? existing.notes,
+          },
+        })
+      : await tx.payment.create({
+          data: {
+            organizationId: data.organizationId,
+            invoiceId: data.invoiceId,
+            customerId: data.customerId,
+            recordedById: data.recordedById,
+            amount: data.amount,
+            currency: data.currency,
+            method: data.method,
+            provider: data.provider,
+            providerTransactionId: data.providerTransactionId,
+            status: "COMPLETED",
+            paidAt: data.paidAt,
+            notes: data.notes ?? null,
+          },
+        });
+
+    const captureRef = data.captureId ?? data.providerTransactionId;
+    const existingTxn = await tx.paymentTransaction.findFirst({
+      where: { provider: data.provider, providerReference: captureRef },
+    });
+    if (!existingTxn) {
+      await tx.paymentTransaction.create({
+        data: {
+          paymentId: payment.id,
+          provider: data.provider,
+          providerReference: captureRef,
+          status: "COMPLETED",
+          amount: data.amount,
+          currency: data.currency,
+          metadata: { source: "paypal", orderId: data.providerTransactionId, captureId: data.captureId ?? null },
+        },
+      });
+    }
+
+    const amountPaid = moneyString(nextPaid);
+    const status: InvoiceStatus = nextPaid.gte(total) ? "PAID" : "PARTIALLY_PAID";
+    await tx.invoice.update({
+      where: { id: invoice.id },
+      data: { amountPaid, status },
+    });
+
+    const record = await tx.payment.findUniqueOrThrow({
+      where: { id: payment.id },
+      include: paymentInclude,
+    });
+
+    return { payment: record, amountPaid, status, alreadyCompleted: false };
+  });
+}
+
+export async function applyProviderRefund(data: {
+  provider: PaymentProvider;
+  providerTransactionId: string;
+}): Promise<void> {
+  await prisma.$transaction(async (tx) => {
+    const payment = await tx.payment.findFirst({
+      where: {
+        provider: data.provider,
+        providerTransactionId: data.providerTransactionId,
+      },
+    });
+    if (!payment || payment.status === "REFUNDED") {
+      return;
+    }
+    await tx.payment.update({
+      where: { id: payment.id },
+      data: { status: "REFUNDED" },
+    });
+
+    const invoice = await tx.invoice.findUniqueOrThrow({ where: { id: payment.invoiceId } });
+    const completed = await tx.payment.findMany({
+      where: { invoiceId: invoice.id, status: "COMPLETED" },
+      select: { amount: true },
+    });
+    const recordedPaid = completed.reduce((sum, row) => sum.plus(row.amount), money(0));
+    const total = money(invoice.total.toString());
+    const amountPaid = moneyString(recordedPaid);
+    const nextStatus: InvoiceStatus = recordedPaid.lte(0)
+      ? invoice.status === "PAID" || invoice.status === "PARTIALLY_PAID"
+        ? "SENT"
+        : invoice.status
+      : recordedPaid.gte(total)
+        ? "PAID"
+        : "PARTIALLY_PAID";
+    await tx.invoice.update({
+      where: { id: invoice.id },
+      data: { amountPaid, status: nextStatus },
+    });
+  });
+}
+
 export async function recordCompletedPaymentAndSettleInvoice(data: {
   organizationId: string;
   invoiceId: string;

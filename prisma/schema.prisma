@@ -134,6 +134,7 @@ model User {
   assignedInvoices   Invoice[]       @relation("InvoiceAssignedTo")
   createdQuotes      Quote[]         @relation("QuoteCreatedBy")
   recordedPayments   Payment[]       @relation("PaymentRecordedBy")
+  paymentGateways    PaymentGatewayConfig[] @relation("PaymentGatewayConnectedBy")
   createdExpenses    Expense[]       @relation("ExpenseCreatedBy")
   notifications      Notification[]
   activityLogs       ActivityLog[]
@@ -534,6 +535,7 @@ model Payment {
   status                PaymentStatus   @default(PENDING)
   paidAt                DateTime?
   notes                 String?
+  receiptSentAt         DateTime?
   createdAt             DateTime        @default(now())
   updatedAt             DateTime        @updatedAt
 
@@ -547,6 +549,7 @@ model Payment {
   @@index([invoiceId])
   @@index([customerId])
   @@index([recordedById])
+  @@unique([provider, providerTransactionId])
   @@index([provider, status])
   @@index([paidAt])
   @@index([organizationId, paidAt])
@@ -586,6 +589,47 @@ model PaymentWebhook {
   @@unique([provider, eventId])
   @@index([processed])
   @@map("payment_webhooks")
+}
+
+enum PaymentGatewayStatus {
+  DISCONNECTED
+  CONNECTED
+}
+
+model PaymentGatewayConfig {
+  id                    String               @id @default(uuid())
+  provider              PaymentProvider      @unique
+  status                PaymentGatewayStatus @default(DISCONNECTED)
+  environment           String
+  merchantId            String?
+  merchantEmail         String?
+  encryptedAccessToken  String?
+  encryptedRefreshToken String?
+  tokenExpiresAt        DateTime?
+  connectedAt           DateTime?
+  disconnectedAt        DateTime?
+  lastVerifiedAt        DateTime?
+  accountEmailMasked    String?
+  connectedById         String?
+  createdAt             DateTime             @default(now())
+  updatedAt             DateTime             @updatedAt
+
+  connectedBy User? @relation("PaymentGatewayConnectedBy", fields: [connectedById], references: [id], onDelete: SetNull)
+
+  @@map("payment_gateway_configs")
+}
+
+model PaymentOAuthState {
+  id         String          @id @default(uuid())
+  provider   PaymentProvider
+  state      String          @unique
+  actorId    String
+  expiresAt  DateTime
+  consumedAt DateTime?
+  createdAt  DateTime        @default(now())
+
+  @@index([expiresAt])
+  @@map("payment_oauth_states")
 }
 
 // ---------------------------------------------------------------------------

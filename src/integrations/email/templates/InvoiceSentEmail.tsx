@@ -38,6 +38,13 @@ export type InvoiceEmailProps = {
   companyPhone?: string;
   showPaymentButton?: boolean;
   paymentUrl?: string;
+  paymentReceipt?: {
+    method: string;
+    amount: string;
+    currency: string;
+    paidAt: string;
+    transactionId: string;
+  };
 };
 
 const colors = {
@@ -70,8 +77,11 @@ export function InvoiceSentEmail({
   companyPhone,
   showPaymentButton = false,
   paymentUrl,
+  paymentReceipt,
 }: InvoiceEmailProps) {
-  const preview = `${companyName} sent invoice ${displayInvoiceNumber(invoiceNumber)}`;
+  const preview = paymentReceipt
+    ? `${companyName} received your payment for ${displayInvoiceNumber(invoiceNumber)}`
+    : `${companyName} sent invoice ${displayInvoiceNumber(invoiceNumber)}`;
   const showPay = Boolean(showPaymentButton && paymentUrl);
 
   return (
@@ -95,7 +105,9 @@ export function InvoiceSentEmail({
             <Section style={styles.greeting}>
               <Text style={styles.hello}>Hello {customerName},</Text>
               <Text style={styles.message}>
-                Your invoice is ready. Please review the invoice details below.
+                {paymentReceipt
+                  ? "We have received your PayPal payment. A summary is below."
+                  : "Your invoice is ready. Please review the invoice details below."}
               </Text>
             </Section>
 
@@ -120,6 +132,33 @@ export function InvoiceSentEmail({
                 </Row>
               ) : null}
             </Section>
+
+            {paymentReceipt ? (
+              <Section style={styles.metaBox}>
+                <Row>
+                  <Column style={styles.metaColumn}>
+                    <Text style={styles.metaLabel}>Payment method</Text>
+                    <Text style={styles.metaValue}>{paymentReceipt.method}</Text>
+                  </Column>
+                  <Column style={styles.metaColumn}>
+                    <Text style={styles.metaLabel}>Amount paid</Text>
+                    <Text style={styles.metaValue}>
+                      {paymentReceipt.amount} {paymentReceipt.currency}
+                    </Text>
+                  </Column>
+                </Row>
+                <Row>
+                  <Column style={styles.metaColumn}>
+                    <Text style={styles.metaLabel}>Payment date</Text>
+                    <Text style={styles.metaValue}>{paymentReceipt.paidAt}</Text>
+                  </Column>
+                  <Column style={styles.metaColumn}>
+                    <Text style={styles.metaLabel}>Transaction ID</Text>
+                    <Text style={styles.metaValue}>{paymentReceipt.transactionId}</Text>
+                  </Column>
+                </Row>
+              </Section>
+            ) : null}
 
             <Section style={styles.tableWrap}>
               <table style={styles.table} width="100%" cellPadding="0" cellSpacing="0" role="presentation">

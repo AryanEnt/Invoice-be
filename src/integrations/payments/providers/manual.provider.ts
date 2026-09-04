@@ -1,4 +1,6 @@
 import type {
+  CapturePaymentInput,
+  CapturePaymentResult,
   CreatePaymentSessionInput,
   HandleWebhookInput,
   PaymentProvider,
@@ -28,6 +30,10 @@ export class ManualPaymentProvider implements PaymentProvider {
       amount: input.amount,
       currency: input.currency,
     };
+  }
+
+  async capturePayment(_input: CapturePaymentInput): Promise<CapturePaymentResult> {
+    throw new NotImplementedError("Manual payments do not support remote capture.");
   }
 
   async verifyPayment(input: VerifyPaymentInput): Promise<VerifyPaymentResult> {

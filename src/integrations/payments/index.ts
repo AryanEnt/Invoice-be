@@ -4,6 +4,8 @@ export { PayPalPaymentProvider } from "./providers/paypal.provider.js";
 export { StripePaymentProvider } from "./providers/stripe.provider.js";
 export { PaymentProviderName } from "./types.js";
 export type {
+  CapturePaymentInput,
+  CapturePaymentResult,
   CreatePaymentSessionInput,
   HandleWebhookInput,
   PaymentProvider,

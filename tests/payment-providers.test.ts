@@ -42,17 +42,9 @@ describe("payment providers", () => {
     );
   });
 
-  it("does not pretend PayPal is implemented", async () => {
+  it("implements PayPal and requires server credentials", async () => {
     const provider = PaymentProviderFactory.resolve(PaymentProviderName.PAYPAL);
-    expect(provider.implemented).toBe(false);
-    await expect(provider.createPaymentSession(sessionInput)).rejects.toBeInstanceOf(
-      NotImplementedError,
-    );
-    await expect(
-      provider.verifyPayment({ providerTransactionId: "PAYID-X" }),
-    ).rejects.toBeInstanceOf(NotImplementedError);
-    await expect(provider.handleWebhook({ headers: {}, rawBody: "{}" })).rejects.toBeInstanceOf(
-      NotImplementedError,
-    );
+    expect(provider.implemented).toBe(true);
+    await expect(provider.createPaymentSession(sessionInput)).rejects.toBeTruthy();
   });
 });
