@@ -60,3 +60,11 @@ export const updateEmailTemplatesSchema = z
       .strict(),
   })
   .strict();
+
+export const updateAdminBrandingSchema = z
+  .object({
+    companyName: z
+      .union([z.string().trim().min(1).max(150), z.literal(""), z.null()])
+      .optional(),
+  })
+  .strict();

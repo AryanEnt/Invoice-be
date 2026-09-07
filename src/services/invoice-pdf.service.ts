@@ -11,13 +11,20 @@ import { toInvoiceView, type InvoiceRecord } from "../lib/invoice-view.js";
 import { findInvoiceById, updateInvoice } from "../repositories/invoice.repository.js";
 import type { AuthUser } from "../types/auth.js";
 import type { InvoiceView } from "../types/invoice.js";
-import { getInvoiceCompanyName } from "./invoice-settings.service.js";
-import { getOrganizationLogoObject } from "./organization-logo.service.js";
+import {
+  getEffectiveBrandingForInvoice,
+  getEffectiveBrandingLogoObjectForInvoice,
+} from "./branding.service.js";
 
 export async function generateInvoicePdfBuffer(invoice: InvoiceView): Promise<Buffer> {
-  const [logo, companyName] = await Promise.all([
-    invoice.organizationId ? getOrganizationLogoObject(invoice.organizationId) : Promise.resolve(null),
-    invoice.organizationId ? getInvoiceCompanyName(invoice.organizationId) : Promise.resolve(null),
+  const brandingInvoice = {
+    createdById: invoice.createdById,
+    assignedMemberId: invoice.assignedMemberId,
+    organizationId: invoice.organizationId,
+  };
+  const [logo, branding] = await Promise.all([
+    getEffectiveBrandingLogoObjectForInvoice(brandingInvoice),
+    getEffectiveBrandingForInvoice(brandingInvoice),
   ]);
 
   return renderInvoicePdf(invoice, undefined, {
@@ -27,7 +34,7 @@ export async function generateInvoicePdfBuffer(invoice: InvoiceView): Promise<Bu
           contentType: logo.contentType,
         }
       : null,
-    companyName,
+    companyName: branding.companyName,
   });
 }
 

@@ -40,6 +40,9 @@ vi.mock("../src/repositories/audit.repository.js", async () => {
 vi.mock("../src/repositories/health.repository.js", () => ({
   checkDatabaseConnection: vi.fn().mockResolvedValue(true),
 }));
+vi.mock("../src/integrations/email/send-invoice-email.js", () => ({
+  sendInvoiceEmail: async () => ({ sent: true, provider: "test" }),
+}));
 vi.mock("../src/integrations/email/provider.js", () => ({
   getEmailProvider: () => ({
     name: "test",
@@ -89,7 +92,7 @@ describe("invoices", () => {
       organizationId: orgA.id,
     });
     const teamA = seedTeam(db, { organizationId: orgA.id, name: "Sales", createdById: adminA.id });
-    seedUser(db, {
+    const adminB = seedUser(db, {
       email: "admin-b@example.com",
       passwordHash,
       role: "ADMIN",
@@ -100,22 +103,26 @@ describe("invoices", () => {
       passwordHash,
       role: "MEMBER",
       organizationId: orgA.id,
+      administratorId: adminA.id,
     });
     const memberOther = seedUser(db, {
       email: "member-other@example.com",
       passwordHash,
       role: "MEMBER",
       organizationId: orgA.id,
+      administratorId: adminA.id,
     });
     seedUser(db, {
       email: "member-b@example.com",
       passwordHash,
       role: "MEMBER",
       organizationId: orgB.id,
+      administratorId: adminB.id,
     });
     db.teamMembers.push({ teamId: teamA.id, userId: memberA.id });
 
     const cookiesA = await loginAs("member-a@example.com");
+    const superCookies = await loginAs("super@example.com");
     const customerA = await request(app)
       .post("/api/customers")
       .set("Cookie", cookiesA)
@@ -147,6 +154,7 @@ describe("invoices", () => {
       memberA,
       memberOther,
       cookiesA,
+      superCookies,
       customerA: customerA.body.data.customer,
       customerB: customerB.body.data.customer,
       productA: productA.body.data.product,
@@ -235,7 +243,7 @@ describe("invoices", () => {
   });
 
   it("enforces controlled status transitions and payment consistency", async () => {
-    const { cookiesA, customerA } = await seedWorld();
+    const { cookiesA, superCookies, customerA } = await seedWorld();
 
     const created = await request(app)
       .post("/api/invoices")
@@ -264,9 +272,15 @@ describe("invoices", () => {
       .send({ notes: "nope" });
     expect(editSent.status).toBe(403);
 
-    const partial = await request(app)
+    const memberPay = await request(app)
       .post(`/api/invoices/${id}/payments`)
       .set("Cookie", cookiesA)
+      .send({ amount: "40" });
+    expect(memberPay.status).toBe(403);
+
+    const partial = await request(app)
+      .post(`/api/invoices/${id}/payments`)
+      .set("Cookie", superCookies)
       .send({ amount: "40" });
     expect(partial.status).toBe(200);
     expect(partial.body.data.invoice.status).toBe("PARTIALLY_PAID");
@@ -274,13 +288,13 @@ describe("invoices", () => {
 
     const overpay = await request(app)
       .post(`/api/invoices/${id}/payments`)
-      .set("Cookie", cookiesA)
+      .set("Cookie", superCookies)
       .send({ amount: "80" });
     expect(overpay.status).toBe(400);
 
     const paid = await request(app)
       .post(`/api/invoices/${id}/payments`)
-      .set("Cookie", cookiesA)
+      .set("Cookie", superCookies)
       .send({ amount: "60" });
     expect(paid.status).toBe(200);
     expect(paid.body.data.invoice.status).toBe("PAID");
@@ -405,7 +419,7 @@ describe("invoices", () => {
   });
 
   it("rejects due dates before invoice dates and invalid paidAt values", async () => {
-    const { cookiesA, customerA } = await seedWorld();
+    const { cookiesA, superCookies, customerA } = await seedWorld();
 
     const invalidRange = await request(app)
       .post("/api/invoices")
@@ -439,13 +453,13 @@ describe("invoices", () => {
     await request(app).post(`/api/invoices/${id}/send`).set("Cookie", cookiesA);
     const invalidPaidAt = await request(app)
       .post(`/api/invoices/${id}/payments`)
-      .set("Cookie", cookiesA)
+      .set("Cookie", superCookies)
       .send({ amount: "5", paidAt: "not-a-date" });
     expect(invalidPaidAt.status).toBe(400);
   });
 
   it("marks a zero-total sent invoice as paid and lists overdue partial invoices", async () => {
-    const { cookiesA, customerA } = await seedWorld();
+    const { cookiesA, superCookies, customerA } = await seedWorld();
 
     const zero = await request(app)
       .post("/api/invoices")
@@ -477,7 +491,7 @@ describe("invoices", () => {
     await request(app).post(`/api/invoices/${overdueId}/send`).set("Cookie", cookiesA);
     await request(app)
       .post(`/api/invoices/${overdueId}/payments`)
-      .set("Cookie", cookiesA)
+      .set("Cookie", superCookies)
       .send({ amount: "20" });
 
     const listed = await request(app)

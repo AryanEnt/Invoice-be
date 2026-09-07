@@ -5,7 +5,7 @@ import { logger } from "../../../lib/logger.js";
 import { InvoiceSentEmail } from "../templates/InvoiceSentEmail.js";
 import type { EmailProvider, EmailSendResult, InvoiceEmailPayload } from "../types.js";
 
-function resolveFromAddress(): string | null {
+function resolveFromAddress(displayName?: string | null): string | null {
   const from = env.EMAIL_FROM?.trim();
   if (!from) {
     return null;
@@ -13,7 +13,7 @@ function resolveFromAddress(): string | null {
   if (from.includes("<") && from.includes(">")) {
     return from;
   }
-  const name = env.EMAIL_FROM_NAME?.trim();
+  const name = displayName?.trim() || env.EMAIL_FROM_NAME?.trim();
   return name ? `${name} <${from}>` : from;
 }
 
@@ -50,7 +50,7 @@ export class ResendEmailProvider implements EmailProvider {
   }
 
   async sendInvoiceEmail(payload: InvoiceEmailPayload): Promise<EmailSendResult> {
-    const from = resolveFromAddress();
+    const from = resolveFromAddress(payload.companyName);
     if (!from) {
       throw new ServiceUnavailableError("Email sending is not configured yet.", "EMAIL_NOT_CONFIGURED");
     }

@@ -61,6 +61,8 @@ export interface UserRecord {
   status: AccountStatus;
   organizationId: string | null;
   administratorId: string | null;
+  companyName: string | null;
+  companyLogoObjectKey: string | null;
   lastLoginAt: Date | null;
   passwordResetToken: string | null;
   passwordResetExpires: Date | null;

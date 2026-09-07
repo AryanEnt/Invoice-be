@@ -119,6 +119,10 @@ model User {
   status               AccountStatus @default(ACTIVE)
   organizationId       String?
   administratorId      String?
+  /// Administrator-only company display name for invoices/emails (falls back to platform branding when null).
+  companyName          String?
+  /// Administrator-only R2 logo object key (falls back to organization logo when null).
+  companyLogoObjectKey String?
   lastLoginAt          DateTime?
   passwordResetToken   String?       @unique
   passwordResetExpires DateTime?

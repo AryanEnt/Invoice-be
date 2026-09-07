@@ -91,7 +91,6 @@ const MEMBER_ALLOWED: ReadonlySet<PermissionCode> = new Set([
   Permissions.QUOTES_CREATE,
   Permissions.QUOTES_UPDATE,
   Permissions.PAYMENTS_VIEW,
-  Permissions.PAYMENTS_CREATE,
   Permissions.EXPENSES_VIEW,
   Permissions.EXPENSES_CREATE,
   Permissions.EXPENSES_UPDATE,

@@ -36,6 +36,10 @@ export async function recordManualPayment(
   actor: AuthUser,
   input: RecordManualPaymentInput,
 ): Promise<{ payment: PaymentView; invoice: InvoiceView }> {
+  if (actor.role === "MEMBER") {
+    throw new ForbiddenError("Members cannot record payments");
+  }
+
   const invoice = await findInvoiceById(input.invoiceId);
   if (!invoice) {
     throw new NotFoundError("Invoice not found");

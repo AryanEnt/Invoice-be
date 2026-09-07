@@ -36,10 +36,9 @@ import {
   scopedTenantOrganizationId,
 } from "../utils/organization-scope.js";
 import { recordAudit } from "./audit.service.js";
-import { getInvoiceCompanyName } from "./invoice-settings.service.js";
+import { getEffectiveBrandingForInvoice } from "./branding.service.js";
 import { getPublicPayPalOptions } from "./paypal-checkout.service.js";
 import { getPublicStripeOptions } from "./stripe-checkout.service.js";
-import { getOrganizationLogoUrl } from "./organization-logo.service.js";
 import { recordManualPayment } from "./payment.service.js";
 
 interface InvoiceItemInput {
@@ -58,14 +57,17 @@ async function withOrganizationLogo(
   if (!view.organization) {
     return view;
   }
-  const logoUrl = await getOrganizationLogoUrl(organizationId, {
-    expiresInSeconds: 60 * 30,
+  const branding = await getEffectiveBrandingForInvoice({
+    createdById: view.createdById,
+    assignedMemberId: view.assignedMemberId,
+    organizationId,
   });
   return {
     ...view,
     organization: {
       ...view.organization,
-      logoUrl,
+      name: branding.companyName || view.organization.name,
+      logoUrl: branding.companyLogoUrl,
     },
   };
 }
@@ -624,13 +626,17 @@ export async function getPublicInvoiceByToken(token: string): Promise<PublicInvo
     }
   }
 
-  const [logoUrl, companyName] = await Promise.all([
-    getOrganizationLogoUrl(record.organizationId, {
-      expiresInSeconds: 60 * 60,
-    }),
-    getInvoiceCompanyName(record.organizationId),
-  ]);
-  const view = toPublicInvoiceView(record, undefined, logoUrl, companyName);
+  const branding = await getEffectiveBrandingForInvoice({
+    createdById: record.createdById,
+    assignedMemberId: record.assignedMemberId,
+    organizationId: record.organizationId,
+  });
+  const view = toPublicInvoiceView(
+    record,
+    undefined,
+    branding.companyLogoUrl,
+    branding.companyName,
+  );
   const paypal = await getPublicPayPalOptions(record);
   const stripe = await getPublicStripeOptions(record);
   return { ...view, paypal, stripe };

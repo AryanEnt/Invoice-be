@@ -2,8 +2,10 @@ import { env } from "../../config/env.js";
 import { ServiceUnavailableError, ValidationError } from "../../lib/errors.js";
 import { invoiceShareUrl } from "../../lib/invoice-share.js";
 import type { InvoiceRecord } from "../../lib/invoice-view.js";
-import { getInvoiceCompanyName } from "../../services/invoice-settings.service.js";
-import { getOrganizationLogoObject } from "../../services/organization-logo.service.js";
+import {
+  getEffectiveBrandingForInvoice,
+  getEffectiveBrandingLogoObjectForInvoice,
+} from "../../services/branding.service.js";
 import { ensureInvoicePdfStored } from "../../services/invoice-pdf.service.js";
 import { formatInvoiceMoney, formatInvoiceQuantity, getCurrencySymbol } from "./currency.js";
 import { getEmailProvider } from "./provider.js";
@@ -59,9 +61,15 @@ export async function buildInvoiceEmailPayload(
   const attachments: EmailAttachment[] = [];
   let companyLogoUrl: string | undefined;
 
-  const [logo, brandedName] = await Promise.all([
-    invoice.organizationId ? getOrganizationLogoObject(invoice.organizationId) : Promise.resolve(null),
-    invoice.organizationId ? getInvoiceCompanyName(invoice.organizationId) : Promise.resolve(null),
+  const brandingInvoice = {
+    createdById: invoice.createdById,
+    assignedMemberId: invoice.assignedMemberId,
+    organizationId: invoice.organizationId,
+  };
+
+  const [logo, branding] = await Promise.all([
+    getEffectiveBrandingLogoObjectForInvoice(brandingInvoice),
+    getEffectiveBrandingForInvoice(brandingInvoice),
   ]);
 
   if (logo?.body.length) {
@@ -87,7 +95,7 @@ export async function buildInvoiceEmailPayload(
 
   return {
     to: recipient,
-    companyName: brandedName ?? invoice.organization?.name ?? env.EMAIL_FROM_NAME ?? "Company",
+    companyName: branding.companyName || env.EMAIL_FROM_NAME || "Company",
     companyLogoUrl,
     customerName: invoice.customer.name,
     invoiceNumber: invoice.invoiceNumber,

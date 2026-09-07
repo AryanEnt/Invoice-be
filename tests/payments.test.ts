@@ -40,6 +40,9 @@ vi.mock("../src/repositories/audit.repository.js", async () => {
 vi.mock("../src/repositories/health.repository.js", () => ({
   checkDatabaseConnection: vi.fn().mockResolvedValue(true),
 }));
+vi.mock("../src/integrations/email/send-invoice-email.js", () => ({
+  sendInvoiceEmail: async () => ({ sent: true, provider: "test" }),
+}));
 vi.mock("../src/integrations/email/provider.js", () => ({
   getEmailProvider: () => ({
     name: "test",
@@ -81,13 +84,13 @@ describe("payments", () => {
     const passwordHash = await hashPassword(password);
 
     seedUser(db, { email: "super@example.com", passwordHash, role: "SUPER_ADMIN" });
-    seedUser(db, {
+    const adminA = seedUser(db, {
       email: "admin-a@example.com",
       passwordHash,
       role: "ADMIN",
       organizationId: orgA.id,
     });
-    seedUser(db, {
+    const adminB = seedUser(db, {
       email: "admin-b@example.com",
       passwordHash,
       role: "ADMIN",
@@ -98,12 +101,14 @@ describe("payments", () => {
       passwordHash,
       role: "MEMBER",
       organizationId: orgA.id,
+      administratorId: adminA.id,
     });
     seedUser(db, {
       email: "member-b@example.com",
       passwordHash,
       role: "MEMBER",
       organizationId: orgB.id,
+      administratorId: adminB.id,
     });
 
     seedUser(db, {
@@ -111,6 +116,7 @@ describe("payments", () => {
       passwordHash,
       role: "MEMBER",
       organizationId: orgA.id,
+      administratorId: adminA.id,
     });
 
     const cookiesA = await loginAs("member-a@example.com");
@@ -150,20 +156,23 @@ describe("payments", () => {
       .post(`/api/invoices/${invoiceB.body.data.invoice.id}/send`)
       .set("Cookie", cookiesB);
 
+    const superCookies = await loginAs("super@example.com");
+
     return {
       cookiesA,
       cookiesB,
+      superCookies,
       invoiceA: invoiceA.body.data.invoice,
       invoiceB: invoiceB.body.data.invoice,
     };
   }
 
   it("records a manual payment and updates invoice balance from payment records", async () => {
-    const { cookiesA, invoiceA } = await seedWorld();
+    const { cookiesA, superCookies, invoiceA } = await seedWorld();
 
     const created = await request(app)
       .post("/api/payments")
-      .set("Cookie", cookiesA)
+      .set("Cookie", superCookies)
       .send({
         invoiceId: invoiceA.id,
         amount: "40",
@@ -192,11 +201,11 @@ describe("payments", () => {
   });
 
   it("marks an invoice paid when completed payments cover the total", async () => {
-    const { cookiesA, invoiceA } = await seedWorld();
+    const { superCookies, invoiceA } = await seedWorld();
 
     const paid = await request(app)
       .post("/api/payments")
-      .set("Cookie", cookiesA)
+      .set("Cookie", superCookies)
       .send({ invoiceId: invoiceA.id, amount: "100", method: "CASH" });
 
     expect(paid.status).toBe(201);
@@ -207,34 +216,34 @@ describe("payments", () => {
   });
 
   it("rejects invalid amounts and overpayments", async () => {
-    const { cookiesA, invoiceA } = await seedWorld();
+    const { superCookies, invoiceA } = await seedWorld();
 
     const zero = await request(app)
       .post("/api/payments")
-      .set("Cookie", cookiesA)
+      .set("Cookie", superCookies)
       .send({ invoiceId: invoiceA.id, amount: "0" });
     expect(zero.status).toBe(400);
 
     const negative = await request(app)
       .post("/api/payments")
-      .set("Cookie", cookiesA)
+      .set("Cookie", superCookies)
       .send({ invoiceId: invoiceA.id, amount: "-10" });
     expect(negative.status).toBe(400);
 
     await request(app)
       .post("/api/payments")
-      .set("Cookie", cookiesA)
+      .set("Cookie", superCookies)
       .send({ invoiceId: invoiceA.id, amount: "40" });
 
     const overpay = await request(app)
       .post("/api/payments")
-      .set("Cookie", cookiesA)
+      .set("Cookie", superCookies)
       .send({ invoiceId: invoiceA.id, amount: "80" });
     expect(overpay.status).toBe(400);
 
     const currency = await request(app)
       .post("/api/payments")
-      .set("Cookie", cookiesA)
+      .set("Cookie", superCookies)
       .send({ invoiceId: invoiceA.id, amount: "10", currency: "EUR" });
     expect(currency.status).toBe(400);
   });
@@ -259,12 +268,26 @@ describe("payments", () => {
     expect(listed.body.data.items).toHaveLength(0);
   });
 
+  it("does not let a member record a payment on their own invoice", async () => {
+    const { cookiesA, invoiceA } = await seedWorld();
+
+    const memberPay = await request(app)
+      .post("/api/payments")
+      .set("Cookie", cookiesA)
+      .send({ invoiceId: invoiceA.id, amount: "10", method: "BANK_TRANSFER" });
+    expect(memberPay.status).toBe(403);
+
+    const listed = await request(app).get("/api/payments").set("Cookie", cookiesA);
+    expect(listed.status).toBe(200);
+    expect(listed.body.data.items).toHaveLength(0);
+  });
+
   it("keeps payments isolated by organization", async () => {
-    const { cookiesA, cookiesB, invoiceA, invoiceB } = await seedWorld();
+    const { cookiesA, cookiesB, superCookies, invoiceA, invoiceB } = await seedWorld();
 
     const paymentA = await request(app)
       .post("/api/payments")
-      .set("Cookie", cookiesA)
+      .set("Cookie", superCookies)
       .send({ invoiceId: invoiceA.id, amount: "25" });
     expect(paymentA.status).toBe(201);
 

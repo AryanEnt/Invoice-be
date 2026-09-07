@@ -69,12 +69,21 @@ export function buildOrganizationLogoKey(
   return `organizations/${organizationId}/logo/${randomUUID()}.${ext}`;
 }
 
+export function buildAdminBrandingLogoKey(adminId: string, contentType: string): string {
+  const ext = logoExtensionForContentType(contentType);
+  return `branding/admins/${adminId}/logo/${randomUUID()}.${ext}`;
+}
+
 export function buildInvoicePdfKey(invoiceId: string): string {
   return `invoices/${invoiceId}/invoice.pdf`;
 }
 
 export function isOrganizationLogoKey(organizationId: string, key: string): boolean {
   return key.startsWith(`organizations/${organizationId}/logo/`);
+}
+
+export function isAdminBrandingLogoKey(adminId: string, key: string): boolean {
+  return key.startsWith(`branding/admins/${adminId}/logo/`);
 }
 
 export function isInvoicePdfKey(invoiceId: string, key: string): boolean {

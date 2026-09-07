@@ -216,6 +216,26 @@ export function createMemoryRepositories(db: MemoryDb) {
       findUserByEmail: async (email: string) =>
         db.users.find((user) => user.email === email.toLowerCase()) ?? null,
       findUserById: async (id: string) => db.users.find((user) => user.id === id) ?? null,
+      findUserByIdWithProfile: async (id: string) => {
+        const user = db.users.find((item) => item.id === id) ?? null;
+        if (!user) {
+          return null;
+        }
+        const administrator = user.administratorId
+          ? db.users.find((item) => item.id === user.administratorId)
+          : null;
+        return {
+          ...user,
+          administrator: administrator
+            ? {
+                id: administrator.id,
+                firstName: administrator.firstName,
+                lastName: administrator.lastName,
+                email: administrator.email,
+              }
+            : null,
+        };
+      },
       createUser: async (data: {
         email: string;
         passwordHash: string;
@@ -281,6 +301,10 @@ export function createMemoryRepositories(db: MemoryDb) {
       },
       countUsersByRole: async (role: UserRole) =>
         db.users.filter((user) => user.role === role).length,
+      listMemberIdsByAdministrator: async (administratorId: string) =>
+        db.users
+          .filter((user) => user.role === "MEMBER" && user.administratorId === administratorId)
+          .map((user) => user.id),
       findAdminById: async (id: string) => {
         const user = db.users.find((item) => item.id === id && item.role === "ADMIN");
         if (!user) {
@@ -1074,6 +1098,7 @@ export function seedUser(
     role: UserRole;
     status?: AccountStatus;
     organizationId?: string | null;
+    administratorId?: string | null;
   },
 ): UserRecord {
   const user: UserRecord = {
@@ -1087,7 +1112,7 @@ export function seedUser(
     role: data.role,
     status: data.status ?? "ACTIVE",
     organizationId: data.organizationId ?? null,
-    administratorId: null,
+    administratorId: data.administratorId ?? null,
     lastLoginAt: null,
     passwordResetToken: null,
     passwordResetExpires: null,

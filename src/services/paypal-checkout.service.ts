@@ -15,7 +15,7 @@ import {
 } from "../repositories/payment.repository.js";
 import { isGlobalPayPalConnected, paypalCustomerReturnUrl } from "./paypal-connect.service.js";
 import { sendPaypalPaymentReceipt } from "./paypal-receipt.service.js";
-import { getInvoiceCompanyName } from "./invoice-settings.service.js";
+import { getEffectiveBrandingForInvoice } from "./branding.service.js";
 
 const SHARE_TOKEN = /^[a-zA-Z0-9_-]{20,128}$/;
 
@@ -105,7 +105,12 @@ export async function createPublicPayPalOrder(token: string): Promise<{ checkout
   }
 
   const provider = PaymentProviderFactory.resolve(PaymentProviderName.PAYPAL);
-  const brandName = (await getInvoiceCompanyName(invoice.organizationId)) ?? invoice.organization?.name;
+  const branding = await getEffectiveBrandingForInvoice({
+    createdById: invoice.createdById,
+    assignedMemberId: invoice.assignedMemberId,
+    organizationId: invoice.organizationId,
+  });
+  const brandName = branding.companyName || invoice.organization?.name;
   const session = await provider.createPaymentSession({
     invoiceId: invoice.id,
     organizationId: invoice.organizationId,

@@ -44,6 +44,9 @@ vi.mock("../src/repositories/audit.repository.js", async () => {
 vi.mock("../src/repositories/health.repository.js", () => ({
   checkDatabaseConnection: vi.fn().mockResolvedValue(true),
 }));
+vi.mock("../src/integrations/email/send-invoice-email.js", () => ({
+  sendInvoiceEmail: async () => ({ sent: true, provider: "test" }),
+}));
 vi.mock("../src/integrations/email/provider.js", () => ({
   getEmailProvider: () => ({
     name: "test",
@@ -92,7 +95,7 @@ describe("dashboard", () => {
       role: "ADMIN",
       organizationId: orgA.id,
     });
-    seedUser(db, {
+    const adminB = seedUser(db, {
       email: "admin-b@example.com",
       passwordHash,
       role: "ADMIN",
@@ -104,22 +107,26 @@ describe("dashboard", () => {
       passwordHash,
       role: "MEMBER",
       organizationId: orgA.id,
+      administratorId: adminA.id,
     });
     seedUser(db, {
       email: "member-other@example.com",
       passwordHash,
       role: "MEMBER",
       organizationId: orgA.id,
+      administratorId: adminA.id,
     });
     seedUser(db, {
       email: "member-b@example.com",
       passwordHash,
       role: "MEMBER",
       organizationId: orgB.id,
+      administratorId: adminB.id,
     });
     db.teamMembers.push({ teamId: teamA.id, userId: memberA.id });
     db.teamMembers.push({ teamId: teamA.id, userId: adminA.id });
 
+    const superCookies = await loginAs("super@example.com");
     const operatorA = await loginAs("member-a@example.com");
     const operatorB = await loginAs("member-b@example.com");
     const cookiesA = await loginAs("admin-a@example.com");
@@ -148,7 +155,7 @@ describe("dashboard", () => {
       .set("Cookie", operatorA);
     await request(app)
       .post("/api/payments")
-      .set("Cookie", operatorA)
+      .set("Cookie", superCookies)
       .send({ invoiceId: invoiceA.body.data.invoice.id, amount: "40" });
 
     const overdueA = await request(app)
@@ -178,7 +185,7 @@ describe("dashboard", () => {
       .set("Cookie", operatorB);
     await request(app)
       .post("/api/payments")
-      .set("Cookie", operatorB)
+      .set("Cookie", superCookies)
       .send({ invoiceId: invoiceB.body.data.invoice.id, amount: "300" });
 
     return { orgA, orgB, teamA, cookiesA, cookiesB };

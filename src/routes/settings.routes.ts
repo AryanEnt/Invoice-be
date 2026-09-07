@@ -1,13 +1,17 @@
 import express, { Router } from "express";
 import {
   confirmOrganizationLogoController,
+  getAdminBrandingController,
   getEmailTemplatesController,
   getInvoiceSettingsController,
   getOrganizationSettingsController,
   createOrganizationLogoUploadUrlController,
+  removeAdminBrandingLogoController,
   removeOrganizationLogoController,
+  updateAdminBrandingController,
   updateEmailTemplatesController,
   updateInvoiceSettingsController,
+  uploadAdminBrandingLogoController,
   uploadOrganizationLogoController,
 } from "../controllers/settings.controller.js";
 import {
@@ -49,6 +53,39 @@ settingsRouter.get(
   requireRole("ADMIN", "SUPER_ADMIN"),
   requirePermission(Permissions.SETTINGS_VIEW),
   asyncHandler(getOrganizationSettingsController),
+);
+
+settingsRouter.get(
+  "/branding",
+  requireAuth,
+  requireRole("ADMIN"),
+  requirePermission(Permissions.SETTINGS_VIEW),
+  asyncHandler(getAdminBrandingController),
+);
+
+settingsRouter.put(
+  "/branding",
+  requireAuth,
+  requireRole("ADMIN"),
+  requirePermission(Permissions.SETTINGS_UPDATE),
+  asyncHandler(updateAdminBrandingController),
+);
+
+settingsRouter.post(
+  "/branding/logo",
+  requireAuth,
+  requireRole("ADMIN"),
+  requirePermission(Permissions.SETTINGS_UPDATE),
+  express.raw({ type: LOGO_RAW_TYPES, limit: "2mb" }),
+  asyncHandler(uploadAdminBrandingLogoController),
+);
+
+settingsRouter.delete(
+  "/branding/logo",
+  requireAuth,
+  requireRole("ADMIN"),
+  requirePermission(Permissions.SETTINGS_UPDATE),
+  asyncHandler(removeAdminBrandingLogoController),
 );
 
 settingsRouter.get(

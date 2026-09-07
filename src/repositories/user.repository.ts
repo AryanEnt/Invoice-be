@@ -136,6 +136,8 @@ export async function updateUser(
       | "passwordResetToken"
       | "passwordResetExpires"
       | "avatarObjectKey"
+      | "companyName"
+      | "companyLogoObjectKey"
     >
   >,
 ): Promise<UserRecord> {
