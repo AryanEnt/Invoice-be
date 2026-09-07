@@ -7,6 +7,8 @@ import {
   getEffectiveBrandingLogoObjectForInvoice,
 } from "../../services/branding.service.js";
 import { ensureInvoicePdfStored } from "../../services/invoice-pdf.service.js";
+import { getPublicPayPalOptions } from "../../services/paypal-checkout.service.js";
+import { getPublicStripeOptions } from "../../services/stripe-checkout.service.js";
 import { formatInvoiceMoney, formatInvoiceQuantity, getCurrencySymbol } from "./currency.js";
 import { getEmailProvider } from "./provider.js";
 import type { EmailAttachment, EmailSendResult, InvoiceEmailPayload } from "./types.js";
@@ -67,9 +69,11 @@ export async function buildInvoiceEmailPayload(
     organizationId: invoice.organizationId,
   };
 
-  const [logo, branding] = await Promise.all([
+  const [logo, branding, paypal, stripe] = await Promise.all([
     getEffectiveBrandingLogoObjectForInvoice(brandingInvoice),
     getEffectiveBrandingForInvoice(brandingInvoice),
+    getPublicPayPalOptions(invoice),
+    getPublicStripeOptions(invoice),
   ]);
 
   if (logo?.body.length) {
@@ -93,6 +97,9 @@ export async function buildInvoiceEmailPayload(
     contentType: "application/pdf",
   });
 
+  const invoiceUrl = invoiceShareUrl(invoice.shareToken);
+  const paymentAvailable = paypal.available || stripe.available;
+
   return {
     to: recipient,
     companyName: branding.companyName || env.EMAIL_FROM_NAME || "Company",
@@ -106,8 +113,9 @@ export async function buildInvoiceEmailPayload(
     items,
     subtotal: formatInvoiceMoney(invoice.subtotal.toString(), currencyCode),
     total: formatInvoiceMoney(invoice.total.toString(), currencyCode),
-    invoiceUrl: invoiceShareUrl(invoice.shareToken),
-    showPaymentButton: false,
+    invoiceUrl,
+    showPaymentButton: paymentAvailable,
+    paymentUrl: paymentAvailable ? invoiceUrl : undefined,
     attachments,
   };
 }

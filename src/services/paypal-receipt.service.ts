@@ -32,6 +32,8 @@ export async function sendPaypalPaymentReceipt(
   try {
     const payload = await buildInvoiceEmailPayload(invoice);
     payload.subject = `Payment received for invoice ${invoice.invoiceNumber}`;
+    payload.showPaymentButton = false;
+    payload.paymentUrl = undefined;
     payload.paymentReceipt = {
       method: "PayPal",
       amount: details.amount,

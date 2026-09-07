@@ -79,7 +79,26 @@ const envSchema = z.object({
     (value) => (value === "" ? undefined : value),
     z.string().min(32).optional(),
   ),
-  RESEND_API_KEY: z.preprocess(
+  SMTP_HOST: z.preprocess(
+    (value) => (value === "" ? undefined : value),
+    z.string().min(1).optional(),
+  ),
+  SMTP_PORT: z.preprocess((value) => {
+    if (value === "" || value == null) {
+      return undefined;
+    }
+    return value;
+  }, z.coerce.number().int().positive().optional()),
+  SMTP_SECURE: z.preprocess((value) => {
+    if (value === "false" || value === "0") return false;
+    if (value === "true" || value === "1") return true;
+    return true;
+  }, z.boolean().default(true)),
+  SMTP_USER: z.preprocess(
+    (value) => (value === "" ? undefined : value),
+    z.string().min(1).optional(),
+  ),
+  SMTP_PASSWORD: z.preprocess(
     (value) => (value === "" ? undefined : value),
     z.string().min(1).optional(),
   ),
