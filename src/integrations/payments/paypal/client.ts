@@ -112,18 +112,73 @@ async function paypalFetch(path: string, init: RequestInit, accessToken?: string
   });
 }
 
-function clientErrorMessage(status: number, body: string): string {
+function clientErrorMessage(
+  status: number,
+  body: string,
+  context?: { orderId?: string; operation?: string },
+): string {
   let name = "";
+  let message: string | undefined;
+  let debugId: string | undefined;
+  let details: unknown;
   try {
-    const parsed = JSON.parse(body) as { name?: string; error?: string };
+    const parsed = JSON.parse(body) as {
+      name?: string;
+      error?: string;
+      message?: string;
+      debug_id?: string;
+      details?: unknown;
+    };
     name = parsed.name ?? parsed.error ?? "";
+    message = typeof parsed.message === "string" ? parsed.message : undefined;
+    debugId = typeof parsed.debug_id === "string" ? parsed.debug_id : undefined;
+    details = parsed.details;
   } catch {
     /* ignore */
   }
+
+  const detailIssues = Array.isArray(details)
+    ? details
+        .map((item) =>
+          item && typeof item === "object" && "issue" in item
+            ? String((item as { issue?: unknown }).issue ?? "")
+            : "",
+        )
+        .filter(Boolean)
+    : [];
+
+  const knownFailure =
+    name === "PAYMENT_DENIED" ||
+    name === "INSTRUMENT_DECLINED" ||
+    name === "ORDER_NOT_APPROVED" ||
+    name === "CURRENCY_NOT_SUPPORTED" ||
+    name === "VALIDATION_ERROR" ||
+    name === "UNPROCESSABLE_ENTITY" ||
+    detailIssues.some((issue) =>
+      [
+        "PAYMENT_DENIED",
+        "INSTRUMENT_DECLINED",
+        "ORDER_NOT_APPROVED",
+        "CURRENCY_NOT_SUPPORTED",
+        "VALIDATION_ERROR",
+      ].includes(issue),
+    );
+
   if (status === 401 || name === "invalid_client") {
     return "PayPal connection requires attention. Please reconnect the payment gateway.";
   }
-  logger.warn("PayPal API request failed", { status, name: name || undefined });
+
+  logger.warn("PayPal API request failed", {
+    operation: context?.operation,
+    orderId: context?.orderId,
+    status,
+    name: name || undefined,
+    message,
+    debugId,
+    details,
+    detailIssues: detailIssues.length > 0 ? detailIssues : undefined,
+    knownFailure: knownFailure || undefined,
+  });
   return "Payment could not be completed. Please try again.";
 }
 
@@ -424,7 +479,8 @@ export async function createPayPalOrder(input: {
         purchase_units: [
           {
             custom_id: input.invoiceId,
-            invoice_id: input.invoiceNumber.slice(0, 127),
+            // PayPal requires invoice_id unique per merchant; reuse of INV-### on retries causes PAYMENT_DENIED.
+            invoice_id: `${input.invoiceNumber}-${Date.now()}`.slice(0, 127),
             description: `Invoice ${input.invoiceNumber}`.slice(0, 127),
             amount: { currency_code: currency, value },
           },
@@ -433,6 +489,8 @@ export async function createPayPalOrder(input: {
           paypal: {
             experience_context: {
               brand_name: (input.brandName ?? "InvoiceHub").slice(0, 127),
+              landing_page: "LOGIN",
+              shipping_preference: "NO_SHIPPING",
               user_action: "PAY_NOW",
               return_url: input.returnUrl,
               cancel_url: input.cancelUrl,
@@ -446,7 +504,10 @@ export async function createPayPalOrder(input: {
 
   if (!response.ok) {
     const body = await readBody(response);
-    throw new ServiceUnavailableError(clientErrorMessage(response.status, body), "PAYPAL_ORDER_FAILED");
+    throw new ServiceUnavailableError(
+      clientErrorMessage(response.status, body, { orderId: undefined, operation: "create_order" }),
+      "PAYPAL_ORDER_FAILED",
+    );
   }
 
   const order = (await response.json()) as PayPalOrder;
@@ -454,6 +515,13 @@ export async function createPayPalOrder(input: {
   if (!order.id || !approveUrl) {
     throw new ServiceUnavailableError("Payment could not be completed. Please try again.", "PAYPAL_ORDER_FAILED");
   }
+  logger.info("PayPal order create response accepted", {
+    orderId: order.id,
+    shippingPreference: "NO_SHIPPING",
+    landingPage: "LOGIN",
+    currency,
+    amount: value,
+  });
   return { orderId: order.id, approveUrl };
 }
 
@@ -462,7 +530,10 @@ export async function getPayPalOrder(orderId: string): Promise<PayPalOrder> {
   const response = await paypalFetch(`/v2/checkout/orders/${encodeURIComponent(orderId)}`, { method: "GET" }, token);
   if (!response.ok) {
     const body = await readBody(response);
-    throw new ServiceUnavailableError(clientErrorMessage(response.status, body), "PAYPAL_ORDER_LOOKUP_FAILED");
+    throw new ServiceUnavailableError(
+      clientErrorMessage(response.status, body, { orderId, operation: "get_order" }),
+      "PAYPAL_ORDER_LOOKUP_FAILED",
+    );
   }
   return (await response.json()) as PayPalOrder;
 }
@@ -485,17 +556,58 @@ export async function capturePayPalOrder(orderId: string): Promise<PayPalOrder> 
 
   const body = await readBody(response);
   let name = "";
+  let debugId: string | undefined;
+  let details: unknown;
+  let detailIssues: string[] = [];
   try {
-    name = (JSON.parse(body) as { name?: string }).name ?? "";
+    const parsed = JSON.parse(body) as {
+      name?: string;
+      message?: string;
+      debug_id?: string;
+      details?: unknown;
+    };
+    name = parsed.name ?? "";
+    debugId = typeof parsed.debug_id === "string" ? parsed.debug_id : undefined;
+    details = parsed.details;
+    if (Array.isArray(parsed.details)) {
+      detailIssues = parsed.details
+        .map((item) =>
+          item && typeof item === "object" && "issue" in item
+            ? String((item as { issue?: unknown }).issue ?? "")
+            : "",
+        )
+        .filter(Boolean);
+    }
   } catch {
     /* ignore */
   }
 
-  if (response.status === 422 && (name === "ORDER_ALREADY_CAPTURED" || name === "UNPROCESSABLE_ENTITY")) {
+  logger.warn("PayPal capture failed", {
+    operation: "capture_order",
+    orderId,
+    status: response.status,
+    name: name || undefined,
+    debugId,
+    details,
+    detailIssues: detailIssues.length > 0 ? detailIssues : undefined,
+  });
+
+  // Idempotent success path only — do not treat funding declines as already-captured.
+  if (response.status === 422 && name === "ORDER_ALREADY_CAPTURED") {
+    return getPayPalOrder(orderId);
+  }
+  if (
+    response.status === 422 &&
+    name === "UNPROCESSABLE_ENTITY" &&
+    detailIssues.includes("ORDER_ALREADY_CAPTURED")
+  ) {
     return getPayPalOrder(orderId);
   }
 
-  throw new ServiceUnavailableError(clientErrorMessage(response.status, body), "PAYPAL_CAPTURE_FAILED");
+  throw new ServiceUnavailableError(
+    clientErrorMessage(response.status, body, { orderId, operation: "capture_order" }),
+    "PAYPAL_CAPTURE_FAILED",
+  );
 }
 
 export function completedCaptureFromOrder(order: PayPalOrder): PayPalCapture | null {

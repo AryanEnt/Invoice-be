@@ -1,13 +1,13 @@
 import { PaymentProviderFactory } from "../integrations/payments/provider-factory.js";
 import { PaymentProviderName } from "../integrations/payments/types.js";
 import { formatPayPalAmount, getPayPalOrder, orderAmountMatches } from "../integrations/payments/paypal/client.js";
-import { isPayPalSupportedCurrency, PAYPAL_UNSUPPORTED_CURRENCY_MESSAGE } from "../integrations/payments/paypal/currencies.js";
 import { ConflictError, NotFoundError, ValidationError } from "../lib/errors.js";
-import { canRecordPayment, deriveInvoiceStatus } from "../lib/invoice-status.js";
+import { deriveInvoiceStatus } from "../lib/invoice-status.js";
 import { logger } from "../lib/logger.js";
 import { money, moneyString } from "../lib/money.js";
 import { findInvoiceByShareToken } from "../repositories/invoice.repository.js";
 import {
+  cancelPendingProviderPayments,
   completeProviderPayment,
   createPendingProviderPayment,
   findPaymentByProviderTransactionId,
@@ -27,6 +27,10 @@ export function assertPublicInvoiceToken(token: string): string {
   return value;
 }
 
+/**
+ * PayPal remains configured in Payment Gateway settings, but is not offered
+ * as a client-facing payment method on public invoices.
+ */
 export async function getPublicPayPalOptions(invoice: {
   id: string;
   status: string;
@@ -40,20 +44,6 @@ export async function getPublicPayPalOptions(invoice: {
   message: string | null;
   lastPayment: { transactionId: string; paidAt: string; amount: string } | null;
 }> {
-  const total = moneyString(invoice.total.toString());
-  const amountPaid = moneyString(
-    invoice.payments
-      ? invoice.payments
-          .filter((payment) => payment.status === "COMPLETED")
-          .reduce((sum, payment) => sum.plus(payment.amount.toString()), money(0))
-      : invoice.amountPaid.toString(),
-  );
-  const status = deriveInvoiceStatus({
-    storedStatus: invoice.status as never,
-    total,
-    amountPaid,
-    dueDate: invoice.dueDate,
-  });
   const last = invoice.payments
     ?.filter((payment) => payment.status === "COMPLETED" && payment.provider === "PAYPAL")
     .at(-1);
@@ -65,19 +55,7 @@ export async function getPublicPayPalOptions(invoice: {
       }
     : null;
 
-  if (status === "PAID" || money(amountPaid).gte(money(total))) {
-    return { available: false, message: null, lastPayment };
-  }
-  if (!canRecordPayment(status)) {
-    return { available: false, message: null, lastPayment };
-  }
-  if (!(await isGlobalPayPalConnected())) {
-    return { available: false, message: null, lastPayment };
-  }
-  if (!isPayPalSupportedCurrency(invoice.currency)) {
-    return { available: false, message: PAYPAL_UNSUPPORTED_CURRENCY_MESSAGE, lastPayment };
-  }
-  return { available: true, message: null, lastPayment };
+  return { available: false, message: null, lastPayment };
 }
 
 export async function createPublicPayPalOrder(token: string): Promise<{ checkoutUrl: string }> {
@@ -129,17 +107,26 @@ export async function createPublicPayPalOrder(token: string): Promise<{ checkout
     throw new ValidationError("Payment could not be completed. Please try again.");
   }
 
-  await createPendingProviderPayment({
-    organizationId: invoice.organizationId,
+  await cancelPendingProviderPayments({
     invoiceId: invoice.id,
-    customerId: invoice.customerId,
-    recordedById: invoice.createdById,
-    amount,
-    currency: invoice.currency,
-    method: "OTHER",
     provider: "PAYPAL",
-    providerTransactionId: session.providerTransactionId,
+    exceptTransactionId: session.providerTransactionId,
   });
+
+  const existing = await findPaymentByProviderTransactionId("PAYPAL", session.providerTransactionId);
+  if (!existing) {
+    await createPendingProviderPayment({
+      organizationId: invoice.organizationId,
+      invoiceId: invoice.id,
+      customerId: invoice.customerId,
+      recordedById: invoice.createdById,
+      amount,
+      currency: invoice.currency,
+      method: "OTHER",
+      provider: "PAYPAL",
+      providerTransactionId: session.providerTransactionId,
+    });
+  }
 
   logger.info("PayPal order created", {
     invoiceId: invoice.id,

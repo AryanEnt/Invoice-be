@@ -52,7 +52,7 @@ export const listInvoicesQuerySchema = z.object({
   status: z
     .enum(["DRAFT", "SENT", "VIEWED", "PARTIALLY_PAID", "PAID", "OVERDUE", "CANCELLED"])
     .optional(),
-  boardColumn: z.enum(["new", "sent", "overdue", "paid"]).optional(),
+  boardColumn: z.enum(["new", "sent", "overdue", "paid", "outstanding"]).optional(),
   customerId: z.string().uuid().optional(),
   organizationId: z.string().uuid().optional(),
   administratorId: z.string().uuid().optional(),

@@ -24,35 +24,51 @@ export async function handlePayPalWebhook(input: {
     return { received: true };
   }
 
-  try {
-    await prisma.paymentWebhook.create({
-      data: {
-        provider: "PAYPAL",
-        eventId: parsed.eventId,
-        payload: {
-          eventType: parsed.eventType ?? null,
-          orderId: parsed.orderId ?? null,
-          captureId: parsed.captureId ?? null,
-        },
-        processed: false,
-      },
-    });
-  } catch {
+  const existing = await prisma.paymentWebhook.findUnique({
+    where: { provider_eventId: { provider: "PAYPAL", eventId: parsed.eventId } },
+  });
+
+  if (existing?.processed) {
     logger.info("PayPal webhook duplicate ignored", { eventId: parsed.eventId });
     return { received: true };
+  }
+
+  if (!existing) {
+    try {
+      await prisma.paymentWebhook.create({
+        data: {
+          provider: "PAYPAL",
+          eventId: parsed.eventId,
+          payload: {
+            eventType: parsed.eventType ?? null,
+            orderId: parsed.orderId ?? null,
+            captureId: parsed.captureId ?? null,
+          },
+          processed: false,
+        },
+      });
+    } catch {
+      const raced = await prisma.paymentWebhook.findUnique({
+        where: { provider_eventId: { provider: "PAYPAL", eventId: parsed.eventId } },
+      });
+      if (raced?.processed) {
+        return { received: true };
+      }
+    }
   }
 
   try {
     await processPayPalWebhookEvent(parsed);
     await prisma.paymentWebhook.update({
       where: { provider_eventId: { provider: "PAYPAL", eventId: parsed.eventId } },
-      data: { processed: true, processedAt: new Date() },
+      data: { processed: true, processedAt: new Date(), error: null },
     });
   } catch (error) {
     await prisma.paymentWebhook.update({
       where: { provider_eventId: { provider: "PAYPAL", eventId: parsed.eventId } },
       data: {
-        error: error instanceof Error ? error.name : "WebhookError",
+        processed: false,
+        error: error instanceof Error ? error.message.slice(0, 500) : "WebhookError",
       },
     });
     logger.error("PayPal webhook processing failed", {

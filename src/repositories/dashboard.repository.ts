@@ -106,7 +106,7 @@ export async function loadDashboardSnapshot(
   };
   const outstandingWhere: Prisma.InvoiceWhereInput = {
     ...invoiceInRange,
-    status: { notIn: ["DRAFT", "CANCELLED"] },
+    status: { notIn: ["DRAFT", "CANCELLED", "PAID"] },
   };
   const daily = rangeDayCount(scope.range) <= 31;
   const granularity: DashboardGranularity = daily ? "day" : "month";

@@ -216,7 +216,7 @@ export async function listInvoiceAccounts(
   query: {
     search?: string;
     status?: InvoiceStatus;
-    boardColumn?: "new" | "sent" | "overdue" | "paid";
+    boardColumn?: "new" | "sent" | "overdue" | "paid" | "outstanding";
     customerId?: string;
     organizationId?: string;
     administratorId?: string;
