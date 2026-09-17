@@ -52,5 +52,5 @@ export const listCustomersQuerySchema = z.object({
   organizationId: z.string().uuid().optional(),
   invoiceLifecycle: z.enum(["NEW", "OLD"]).optional(),
   page: z.coerce.number().int().min(1).default(1),
-  pageSize: z.coerce.number().int().min(1).max(100).default(10),
+  pageSize: z.coerce.number().int().min(1).max(50).default(10),
 });

@@ -32,18 +32,13 @@ import { Permissions } from "../config/permissions.js";
 import { optionalAuth } from "../middleware/optional-auth.js";
 import { paypalConnectRateLimit } from "../middleware/paypal-rate-limit.js";
 import { stripeConnectRateLimit } from "../middleware/stripe-rate-limit.js";
+import { uploadRateLimit } from "../middleware/app-rate-limits.js";
 import { requireAuth } from "../middleware/require-auth.js";
 import { requirePermission } from "../middleware/require-permission.js";
 import { requireRole } from "../middleware/require-role.js";
 import { asyncHandler } from "../utils/async-handler.js";
 
-const LOGO_RAW_TYPES = [
-  "image/png",
-  "image/jpeg",
-  "image/jpg",
-  "image/webp",
-  "image/svg+xml",
-];
+const LOGO_RAW_TYPES = ["image/png", "image/jpeg", "image/jpg", "image/webp"];
 
 const settingsRouter = Router();
 
@@ -76,6 +71,7 @@ settingsRouter.post(
   requireAuth,
   requireRole("ADMIN"),
   requirePermission(Permissions.SETTINGS_UPDATE),
+  uploadRateLimit,
   express.raw({ type: LOGO_RAW_TYPES, limit: "2mb" }),
   asyncHandler(uploadAdminBrandingLogoController),
 );
@@ -125,6 +121,7 @@ settingsRouter.post(
   requireAuth,
   requireRole("SUPER_ADMIN"),
   requirePermission(Permissions.SETTINGS_UPDATE),
+  uploadRateLimit,
   express.raw({ type: LOGO_RAW_TYPES, limit: "2mb" }),
   asyncHandler(uploadOrganizationLogoController),
 );
@@ -134,6 +131,7 @@ settingsRouter.post(
   requireAuth,
   requireRole("SUPER_ADMIN"),
   requirePermission(Permissions.SETTINGS_UPDATE),
+  uploadRateLimit,
   asyncHandler(createOrganizationLogoUploadUrlController),
 );
 
@@ -142,6 +140,7 @@ settingsRouter.post(
   requireAuth,
   requireRole("SUPER_ADMIN"),
   requirePermission(Permissions.SETTINGS_UPDATE),
+  uploadRateLimit,
   asyncHandler(confirmOrganizationLogoController),
 );
 

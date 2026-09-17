@@ -8,6 +8,7 @@ import {
   deleteObject,
   getObject,
   headObject,
+  isAllowedLogoContentType,
   isOrganizationLogoKey,
   uploadObject,
 } from "../integrations/storage/r2.service.js";
@@ -120,6 +121,7 @@ export async function createOrganizationLogoUploadUrl(
   const uploadUrl = await createPresignedUploadUrl({
     key: objectKey,
     contentType: input.contentType,
+    contentLength: input.contentLength,
     expiresInSeconds,
   });
 
@@ -177,12 +179,19 @@ export async function confirmOrganizationLogoUpload(
   if (!head) {
     throw new ValidationError("Logo upload was not found. Please try again.");
   }
-  if (head.contentLength !== undefined) {
-    assertLogoUploadMeta({
-      contentType: input.contentType,
-      contentLength: head.contentLength,
-    });
+  if (head.contentLength === undefined) {
+    throw new ValidationError("Logo upload could not be verified. Please try again.");
   }
+  const storedType = (head.contentType ?? "").trim().toLowerCase();
+  const claimedType =
+    input.contentType === "image/jpg" ? "image/jpeg" : input.contentType.trim().toLowerCase();
+  if (!storedType || !isAllowedLogoContentType(storedType) || storedType !== claimedType) {
+    throw new ValidationError("Logo upload content type is invalid");
+  }
+  assertLogoUploadMeta({
+    contentType: storedType,
+    contentLength: head.contentLength,
+  });
 
   return persistOrganizationLogo(actor, organization, input.objectKey);
 }

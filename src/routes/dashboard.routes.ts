@@ -5,6 +5,7 @@ import {
   getDashboardForecastController,
   updateCollectionTargetController,
 } from "../controllers/dashboard.controller.js";
+import { dashboardRateLimit } from "../middleware/app-rate-limits.js";
 import { requireAuth } from "../middleware/require-auth.js";
 import { requireRole } from "../middleware/require-role.js";
 import { asyncHandler } from "../utils/async-handler.js";
@@ -12,6 +13,7 @@ import { asyncHandler } from "../utils/async-handler.js";
 const dashboardRouter = Router();
 
 dashboardRouter.use(requireAuth);
+dashboardRouter.use(dashboardRateLimit);
 
 dashboardRouter.get("/", asyncHandler(getDashboardController));
 dashboardRouter.get(

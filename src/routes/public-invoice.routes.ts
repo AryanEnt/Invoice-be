@@ -9,11 +9,17 @@ import {
   createPublicStripeCheckoutController,
 } from "../controllers/stripe.controller.js";
 import { getPublicInvoiceController } from "../controllers/invoice.controller.js";
+import {
+  publicInvoiceRateLimit,
+  publicPaymentStatusRateLimit,
+} from "../middleware/app-rate-limits.js";
 import { paypalPublicPaymentRateLimit } from "../middleware/paypal-rate-limit.js";
 import { stripePublicPaymentRateLimit } from "../middleware/stripe-rate-limit.js";
 import { asyncHandler } from "../utils/async-handler.js";
 
 const publicInvoiceRouter = Router();
+
+publicInvoiceRouter.use(publicInvoiceRateLimit);
 
 publicInvoiceRouter.post(
   "/:token/paypal/create-order",
@@ -37,6 +43,7 @@ publicInvoiceRouter.post(
 );
 publicInvoiceRouter.get(
   "/:token/payment-status",
+  publicPaymentStatusRateLimit,
   asyncHandler(getPublicPayPalPaymentStatusController),
 );
 publicInvoiceRouter.get("/:token", asyncHandler(getPublicInvoiceController));

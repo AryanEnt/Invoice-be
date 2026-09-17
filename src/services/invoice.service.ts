@@ -437,6 +437,7 @@ export async function updateInvoiceAccount(
     if (!customer || customer.organizationId !== invoice.organizationId) {
       throw new ForbiddenError("Customer must belong to the organization");
     }
+    await assertCustomerScope(actor, customer);
   }
 
   const nextAssignedMemberId =
@@ -600,6 +601,10 @@ export async function getInvoiceShareLink(
   }
   await assertInvoiceAccess(actor, invoice);
 
+  if (invoice.status === "DRAFT" || invoice.status === "CANCELLED") {
+    throw new ForbiddenError("Share links are only available for sent invoices");
+  }
+
   const shareable = await ensureInvoiceShareToken(invoice.id, invoice.shareToken);
   if (!shareable.shareToken) {
     throw new ValidationError("Unable to create an invoice link");
@@ -610,7 +615,7 @@ export async function getInvoiceShareLink(
 
 export async function getPublicInvoiceByToken(token: string): Promise<PublicInvoiceView> {
   const invoice = await findInvoiceByShareToken(token);
-  if (!invoice || invoice.status === "CANCELLED") {
+  if (!invoice || invoice.status === "CANCELLED" || invoice.status === "DRAFT") {
     throw new NotFoundError("Invoice not found");
   }
 

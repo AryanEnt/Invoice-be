@@ -18,11 +18,13 @@ import {
   createPresignedUploadUrl,
   deleteObject,
   headObject,
+  isAllowedLogoContentType,
 } from "../integrations/storage/r2.service.js";
 import { randomUUID } from "node:crypto";
 import {
   createSession,
   deleteSessionByTokenHash,
+  deleteSessionsByUserId,
   findSessionByTokenHash,
 } from "../repositories/session.repository.js";
 import { findOrganizationById } from "../repositories/organization.repository.js";
@@ -86,9 +88,7 @@ function buildAvatarKey(userId: string, contentType: string): string {
       ? "png"
       : contentType === "image/webp"
         ? "webp"
-        : contentType === "image/svg+xml"
-          ? "svg"
-          : "jpg";
+        : "jpg";
   return `users/${userId}/avatar/${randomUUID()}.${ext}`;
 }
 
@@ -221,6 +221,7 @@ export async function changePassword(
   }
 
   await updateUser(actorId, { passwordHash: await hashPassword(input.newPassword) });
+  await deleteSessionsByUserId(actorId);
 
   await recordAudit({
     actorId,
@@ -244,6 +245,7 @@ export async function createAvatarUploadUrl(
   const uploadUrl = await createPresignedUploadUrl({
     key: objectKey,
     contentType: input.contentType,
+    contentLength: input.contentLength,
     expiresInSeconds,
   });
   return { uploadUrl, objectKey, expiresInSeconds };
@@ -268,12 +270,19 @@ export async function confirmAvatarUpload(
   if (!head) {
     throw new ValidationError("Avatar upload was not found. Please try again.");
   }
-  if (head.contentLength !== undefined) {
-    assertLogoUploadMeta({
-      contentType: input.contentType,
-      contentLength: head.contentLength,
-    });
+  if (head.contentLength === undefined) {
+    throw new ValidationError("Avatar upload could not be verified. Please try again.");
   }
+  const storedType = (head.contentType ?? "").trim().toLowerCase();
+  const claimedType =
+    input.contentType === "image/jpg" ? "image/jpeg" : input.contentType.trim().toLowerCase();
+  if (!storedType || !isAllowedLogoContentType(storedType) || storedType !== claimedType) {
+    throw new ValidationError("Avatar upload content type is invalid");
+  }
+  assertLogoUploadMeta({
+    contentType: storedType,
+    contentLength: head.contentLength,
+  });
 
   const previous = user.avatarObjectKey;
   const updated = await updateUser(actorId, { avatarObjectKey: input.objectKey });

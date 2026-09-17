@@ -12,6 +12,11 @@ function encryptionKey(): Buffer {
     }
     return createHash("sha256").update(raw).digest();
   }
+  if (env.NODE_ENV === "production") {
+    throw new Error(
+      "PAYMENT_TOKEN_ENCRYPTION_KEY is required in production for payment token encryption",
+    );
+  }
   return scryptSync(env.JWT_SECRET, "invoicehub-payment-token-v1", 32);
 }
 

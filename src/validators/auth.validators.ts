@@ -22,13 +22,7 @@ export const changePasswordSchema = z
 
 export const createAvatarUploadUrlSchema = z
   .object({
-    contentType: z.enum([
-      "image/png",
-      "image/jpeg",
-      "image/jpg",
-      "image/webp",
-      "image/svg+xml",
-    ]),
+    contentType: z.enum(["image/png", "image/jpeg", "image/jpg", "image/webp"]),
     contentLength: z.number().int().positive().max(2 * 1024 * 1024),
   })
   .strict();
@@ -36,12 +30,6 @@ export const createAvatarUploadUrlSchema = z
 export const confirmAvatarSchema = z
   .object({
     objectKey: z.string().min(1).max(512),
-    contentType: z.enum([
-      "image/png",
-      "image/jpeg",
-      "image/jpg",
-      "image/webp",
-      "image/svg+xml",
-    ]),
+    contentType: z.enum(["image/png", "image/jpeg", "image/jpg", "image/webp"]),
   })
   .strict();

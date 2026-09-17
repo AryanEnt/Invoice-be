@@ -481,6 +481,14 @@ export function createMemoryRepositories(db: MemoryDb) {
       deleteSessionsByUserId: async (userId: string) => {
         db.sessions = db.sessions.filter((session) => session.userId !== userId);
       },
+      deleteSessionsByOrganizationId: async (organizationId: string) => {
+        const userIds = new Set(
+          db.users
+            .filter((user) => user.organizationId === organizationId)
+            .map((user) => user.id),
+        );
+        db.sessions = db.sessions.filter((session) => !userIds.has(session.userId));
+      },
     },
     organization: {
       findOrganizationById: async (id: string) =>

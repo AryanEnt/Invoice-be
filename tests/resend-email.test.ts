@@ -1,14 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const { sendMail, createTransport } = vi.hoisted(() => {
-  const sendMailFn = vi.fn();
-  const createTransportFn = vi.fn(() => ({ sendMail: sendMailFn }));
-  return { sendMail: sendMailFn, createTransport: createTransportFn };
-});
+const { emailsSend } = vi.hoisted(() => ({
+  emailsSend: vi.fn(),
+}));
 
-vi.mock("nodemailer", () => ({
-  default: {
-    createTransport,
+vi.mock("resend", () => ({
+  Resend: class {
+    emails = { send: emailsSend };
   },
 }));
 
@@ -19,19 +17,17 @@ vi.mock("@react-email/render", () => ({
 vi.mock("../src/config/env.js", () => ({
   env: {
     NODE_ENV: "test",
-    SMTP_HOST: "smtp.spacemail.com",
-    SMTP_PORT: 465,
-    SMTP_SECURE: true,
-    SMTP_USER: "info@invoicelink.com",
-    SMTP_PASSWORD: "secret",
-    EMAIL_FROM: "info@invoicelink.com",
-    EMAIL_FROM_NAME: "InvoiceHub",
+    RESEND_API_KEY: "re_test_key",
+    EMAIL_FROM: "Invoice <invoice@send.entegrasources.com>",
+    EMAIL_FROM_NAME: "Invoice",
+    EMAIL_REPLY_TO: undefined,
   },
 }));
 
 import { render } from "@react-email/render";
-import { SmtpEmailProvider } from "../src/integrations/email/providers/smtp.provider.js";
+import { ResendEmailProvider } from "../src/integrations/email/providers/resend.provider.js";
 import type { InvoiceEmailPayload } from "../src/integrations/email/types.js";
+import { clearResendClientCache } from "../src/services/email.service.js";
 
 function basePayload(overrides: Partial<InvoiceEmailPayload> = {}): InvoiceEmailPayload {
   return {
@@ -74,32 +70,32 @@ function basePayload(overrides: Partial<InvoiceEmailPayload> = {}): InvoiceEmail
   };
 }
 
-describe("SmtpEmailProvider", () => {
+describe("ResendEmailProvider", () => {
   beforeEach(() => {
-    sendMail.mockReset();
-    createTransport.mockClear();
+    emailsSend.mockReset();
+    clearResendClientCache();
     vi.mocked(render).mockClear();
   });
 
-  it("sends HTML mail with CID logo and PDF attachments", async () => {
-    sendMail.mockResolvedValue({ messageId: "smtp-message-1" });
-    const provider = new SmtpEmailProvider();
+  it("sends HTML mail with CID logo and PDF attachments via Resend", async () => {
+    emailsSend.mockResolvedValue({ data: { id: "re_msg_1" }, error: null });
+    const provider = new ResendEmailProvider();
 
     const result = await provider.sendInvoiceEmail(basePayload());
 
     expect(provider.isConfigured()).toBe(true);
-    expect(result).toEqual({ sent: true, provider: "smtp", id: "smtp-message-1" });
+    expect(result).toEqual({ sent: true, provider: "resend", id: "re_msg_1" });
     expect(render).toHaveBeenCalled();
-    expect(sendMail).toHaveBeenCalledWith(
+    expect(emailsSend).toHaveBeenCalledWith(
       expect.objectContaining({
-        from: "Acme Co <info@invoicelink.com>",
-        to: "customer@example.com",
+        from: "Invoice <invoice@send.entegrasources.com>",
+        to: ["customer@example.com"],
         subject: "Invoice INV-100 from Acme Co",
         html: "<html>invoice</html>",
         attachments: [
           expect.objectContaining({
             filename: "logo.png",
-            cid: "organization-logo",
+            contentId: "organization-logo",
             contentType: "image/png",
           }),
           expect.objectContaining({
@@ -112,8 +108,8 @@ describe("SmtpEmailProvider", () => {
   });
 
   it("uses custom subject for payment receipts", async () => {
-    sendMail.mockResolvedValue({ messageId: "receipt-1" });
-    const provider = new SmtpEmailProvider();
+    emailsSend.mockResolvedValue({ data: { id: "receipt-1" }, error: null });
+    const provider = new ResendEmailProvider();
 
     await provider.sendInvoiceEmail(
       basePayload({
@@ -130,31 +126,31 @@ describe("SmtpEmailProvider", () => {
       }),
     );
 
-    expect(sendMail).toHaveBeenCalledWith(
+    expect(emailsSend).toHaveBeenCalledWith(
       expect.objectContaining({
         subject: "Payment received for invoice INV-100",
       }),
     );
   });
 
-  it("maps authentication failures to a safe error", async () => {
-    const authError = Object.assign(new Error("Invalid login"), { code: "EAUTH" });
-    sendMail.mockRejectedValue(authError);
-    const provider = new SmtpEmailProvider();
+  it("maps Resend API failures to a safe EMAIL_SEND_FAILED error", async () => {
+    emailsSend.mockResolvedValue({
+      data: null,
+      error: { name: "validation_error", message: "Invalid `to` field" },
+    });
+    const provider = new ResendEmailProvider();
 
     await expect(provider.sendInvoiceEmail(basePayload())).rejects.toMatchObject({
-      message: "Email server authentication failed. Check SMTP username and password.",
       code: "EMAIL_SEND_FAILED",
     });
   });
 
-  it("maps connection failures to a safe error", async () => {
-    const connError = Object.assign(new Error("connect ETIMEDOUT"), { code: "ETIMEDOUT" });
-    sendMail.mockRejectedValue(connError);
-    const provider = new SmtpEmailProvider();
+  it("maps API key failures to a safe authentication message", async () => {
+    emailsSend.mockRejectedValue(new Error("API key is invalid"));
+    const provider = new ResendEmailProvider();
 
     await expect(provider.sendInvoiceEmail(basePayload())).rejects.toMatchObject({
-      message: "Could not connect to the email server. Check SMTP host and port.",
+      message: "Email provider authentication failed. Check RESEND_API_KEY.",
       code: "EMAIL_SEND_FAILED",
     });
   });

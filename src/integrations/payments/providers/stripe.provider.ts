@@ -5,6 +5,7 @@ import {
   createStripeCheckoutSession,
   parseStripeAmount,
   retrieveStripeCheckoutSession,
+  stripeModeMatchesKey,
 } from "../stripe/client.js";
 import { stripeCredentialsConfigured } from "../stripe/config.js";
 import type {
@@ -115,6 +116,10 @@ export class StripePaymentProvider implements PaymentProvider {
       event = constructStripeWebhookEvent(input.rawBody, signature);
     } catch {
       throw new ValidationError("Stripe webhook signature is invalid.");
+    }
+
+    if (!stripeModeMatchesKey(event.livemode)) {
+      throw new ValidationError("Stripe webhook livemode does not match configured API key.");
     }
 
     const result: WebhookResult = {

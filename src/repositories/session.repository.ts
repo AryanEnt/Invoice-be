@@ -36,3 +36,9 @@ export async function deleteSessionsByUserId(userId: string): Promise<void> {
     where: { userId },
   });
 }
+
+export async function deleteSessionsByOrganizationId(organizationId: string): Promise<void> {
+  await prisma.session.deleteMany({
+    where: { user: { organizationId } },
+  });
+}

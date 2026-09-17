@@ -11,12 +11,12 @@ import { ServiceUnavailableError, ValidationError } from "../../lib/errors.js";
 import { getR2BucketName, getR2Client, isR2Configured } from "./r2.client.js";
 
 const LOGO_MAX_BYTES = 2 * 1024 * 1024;
+/** Raster images only — SVG is disallowed to prevent stored XSS via uploaded logos. */
 const LOGO_CONTENT_TYPES = new Map<string, string>([
   ["image/png", "png"],
   ["image/jpeg", "jpg"],
   ["image/jpg", "jpg"],
   ["image/webp", "webp"],
-  ["image/svg+xml", "svg"],
 ]);
 
 export type StoredObject = {
@@ -41,7 +41,7 @@ export function isAllowedLogoContentType(contentType: string): boolean {
 export function logoExtensionForContentType(contentType: string): string {
   const ext = LOGO_CONTENT_TYPES.get(contentType.trim().toLowerCase());
   if (!ext) {
-    throw new ValidationError("Logo must be a PNG, JPG, WebP, or SVG file");
+    throw new ValidationError("Logo must be a PNG, JPG, or WebP file");
   }
   return ext;
 }
@@ -51,7 +51,7 @@ export function assertLogoUploadMeta(input: {
   contentLength: number;
 }): void {
   if (!isAllowedLogoContentType(input.contentType)) {
-    throw new ValidationError("Logo must be a PNG, JPG, WebP, or SVG file");
+    throw new ValidationError("Logo must be a PNG, JPG, or WebP file");
   }
   if (!Number.isFinite(input.contentLength) || input.contentLength <= 0) {
     throw new ValidationError("Logo file is empty");
@@ -179,13 +179,19 @@ export async function deleteObject(key: string): Promise<void> {
 export async function createPresignedUploadUrl(input: {
   key: string;
   contentType: string;
+  contentLength: number;
   expiresInSeconds?: number;
 }): Promise<string> {
   assertR2Ready();
+  assertLogoUploadMeta({
+    contentType: input.contentType,
+    contentLength: input.contentLength,
+  });
   const command = new PutObjectCommand({
     Bucket: getR2BucketName(),
     Key: input.key,
     ContentType: input.contentType,
+    ContentLength: input.contentLength,
   });
   return getSignedUrl(getR2Client(), command, {
     expiresIn: input.expiresInSeconds ?? 60 * 5,
@@ -222,8 +228,6 @@ export function contentTypeFromFilename(filename: string): string | null {
       return "image/jpeg";
     case ".webp":
       return "image/webp";
-    case ".svg":
-      return "image/svg+xml";
     default:
       return null;
   }

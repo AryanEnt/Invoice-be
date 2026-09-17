@@ -38,10 +38,11 @@ export async function listPayments(query: {
   page: number;
   pageSize: number;
 }): Promise<{ items: PaymentRecord[]; total: number }> {
-  const invoiceAccessFilter =
-    query.userIds && query.userIds.length > 0
+  const invoiceAccessFilter = query.userIds
+    ? query.userIds.length > 0
       ? { invoice: buildInvoiceUserAccessFilter(query.userIds) }
-      : {};
+      : { invoiceId: { in: [] } }
+    : {};
 
   const where: Prisma.PaymentWhereInput = {
     ...(query.organizationId ? { organizationId: query.organizationId } : {}),

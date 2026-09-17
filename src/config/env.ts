@@ -79,26 +79,7 @@ const envSchema = z.object({
     (value) => (value === "" ? undefined : value),
     z.string().min(32).optional(),
   ),
-  SMTP_HOST: z.preprocess(
-    (value) => (value === "" ? undefined : value),
-    z.string().min(1).optional(),
-  ),
-  SMTP_PORT: z.preprocess((value) => {
-    if (value === "" || value == null) {
-      return undefined;
-    }
-    return value;
-  }, z.coerce.number().int().positive().optional()),
-  SMTP_SECURE: z.preprocess((value) => {
-    if (value === "false" || value === "0") return false;
-    if (value === "true" || value === "1") return true;
-    return true;
-  }, z.boolean().default(true)),
-  SMTP_USER: z.preprocess(
-    (value) => (value === "" ? undefined : value),
-    z.string().min(1).optional(),
-  ),
-  SMTP_PASSWORD: z.preprocess(
+  RESEND_API_KEY: z.preprocess(
     (value) => (value === "" ? undefined : value),
     z.string().min(1).optional(),
   ),
@@ -109,6 +90,10 @@ const envSchema = z.object({
   EMAIL_FROM_NAME: z.preprocess(
     (value) => (value === "" ? undefined : value),
     z.string().min(1).optional(),
+  ),
+  EMAIL_REPLY_TO: z.preprocess(
+    (value) => (value === "" ? undefined : value),
+    z.string().email().optional(),
   ),
   APP_URL: z.preprocess(
     (value) => (value === "" ? undefined : value),
@@ -148,7 +133,14 @@ function parseEnv(): Env {
     throw new Error(`Invalid environment configuration: ${details}`);
   }
 
-  return parsed.data;
+  const data = parsed.data;
+  if (data.NODE_ENV === "production" && !data.PAYMENT_TOKEN_ENCRYPTION_KEY) {
+    throw new Error(
+      "Invalid environment configuration: PAYMENT_TOKEN_ENCRYPTION_KEY is required in production",
+    );
+  }
+
+  return data;
 }
 
 export const env = parseEnv();

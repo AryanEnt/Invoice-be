@@ -216,6 +216,9 @@ function parsePayPalOAuthErrorBody(body: string): PayPalOAuthErrorFields {
 
 /** Temporary: persist sanitized token-exchange failures for local diagnosis (no secrets). */
 function writeTokenExchangeDiag(payload: Record<string, unknown>): void {
+  if (env.NODE_ENV !== "development") {
+    return;
+  }
   try {
     const file = path.join(process.cwd(), ".paypal-token-exchange-diag.json");
     fs.writeFileSync(file, `${JSON.stringify({ ...payload, at: new Date().toISOString() }, null, 2)}\n`, "utf8");

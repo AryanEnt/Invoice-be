@@ -29,9 +29,24 @@ export function errorHandler(
     return;
   }
 
+  const payloadTooLarge =
+    (typeof err === "object" &&
+      err !== null &&
+      "type" in err &&
+      (err as { type?: string }).type === "entity.too.large") ||
+    (err instanceof Error && /payload too large|request entity too large/i.test(err.message));
+
+  if (payloadTooLarge) {
+    res.status(413).json(failure("PAYLOAD_TOO_LARGE", "Request body is too large"));
+    return;
+  }
+
   logger.error("Unhandled server error", {
     name: err instanceof Error ? err.name : "UnknownError",
     message: err instanceof Error ? err.message : "Unknown error",
+    ...(env.NODE_ENV !== "production" && err instanceof Error && err.stack
+      ? { stack: err.stack }
+      : {}),
   });
 
   const message =

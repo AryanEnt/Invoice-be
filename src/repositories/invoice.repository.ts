@@ -440,10 +440,11 @@ export async function countInvoiceSummary(query: {
   userIds?: string[];
   now?: Date;
 }): Promise<InvoiceSummaryCounts> {
-  const accessFilter: Prisma.InvoiceWhereInput | undefined =
-    query.userIds && query.userIds.length > 0
+  const accessFilter: Prisma.InvoiceWhereInput | undefined = query.userIds
+    ? query.userIds.length > 0
       ? buildInvoiceUserAccessFilter(query.userIds)
-      : undefined;
+      : { id: { in: [] } }
+    : undefined;
 
   const base: Prisma.InvoiceWhereInput = {
     ...(query.organizationId ? { organizationId: query.organizationId } : {}),

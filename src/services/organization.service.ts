@@ -8,6 +8,7 @@ import {
   updateOrganization,
   type OrganizationOverviewRecord,
 } from "../repositories/organization.repository.js";
+import { deleteSessionsByOrganizationId } from "../repositories/session.repository.js";
 import type { AuthUser, OrganizationRecord } from "../types/auth.js";
 import { slugify } from "../utils/slug.js";
 import { recordAudit } from "./audit.service.js";
@@ -174,6 +175,10 @@ export async function updateOrganizationStatus(
   await getOrganization(id);
 
   const organization = await updateOrganization(id, { isActive });
+
+  if (!isActive) {
+    await deleteSessionsByOrganizationId(organization.id);
+  }
 
   await recordAudit({
     actorId: actor.id,
