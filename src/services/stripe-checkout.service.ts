@@ -6,8 +6,11 @@ import { logger } from "../lib/logger.js";
 import { money, moneyString } from "../lib/money.js";
 import { findInvoiceByShareToken } from "../repositories/invoice.repository.js";
 import {
+  cancelPendingProviderPayments,
+  completeProviderPayment,
   createPendingProviderPayment,
   findPaymentByProviderTransactionId,
+  findPendingProviderPayments,
 } from "../repositories/payment.repository.js";
 import {
   getConnectedStripeAccountId,
@@ -131,6 +134,12 @@ export async function createPublicStripeCheckout(token: string): Promise<{ check
     throw new ValidationError("Payment could not be completed. Please try again.");
   }
 
+  await cancelPendingProviderPayments({
+    invoiceId: invoice.id,
+    provider: "STRIPE",
+    exceptTransactionId: session.providerTransactionId,
+  });
+
   const existing = await findPaymentByProviderTransactionId("STRIPE", session.providerTransactionId);
   if (!existing) {
     await createPendingProviderPayment({
@@ -153,4 +162,105 @@ export async function createPublicStripeCheckout(token: string): Promise<{ check
   });
 
   return { checkoutUrl: session.checkoutUrl };
+}
+
+export async function confirmPublicStripeCheckout(token: string): Promise<{
+  paid: boolean;
+  invoiceNumber: string;
+  amount: string;
+  currency: string;
+  transactionId: string | null;
+}> {
+  const invoice = await findInvoiceByShareToken(assertPublicInvoiceToken(token));
+  if (!invoice || invoice.status === "CANCELLED") {
+    throw new NotFoundError("Invoice not found");
+  }
+
+  const amountPaid = invoice.payments
+    ? invoice.payments
+        .filter((payment) => payment.status === "COMPLETED")
+        .reduce((sum, payment) => sum.plus(payment.amount.toString()), money(0))
+    : money(invoice.amountPaid.toString());
+  if (money(amountPaid).gte(money(invoice.total.toString()))) {
+    const last = invoice.payments
+      ?.filter((payment) => payment.status === "COMPLETED" && payment.provider === "STRIPE")
+      .at(-1);
+    return {
+      paid: true,
+      invoiceNumber: invoice.invoiceNumber,
+      amount: moneyString(invoice.total.toString()),
+      currency: invoice.currency,
+      transactionId: last?.providerTransactionId ?? null,
+    };
+  }
+
+  const connectedAccountId = await getConnectedStripeAccountId();
+  if (!connectedAccountId) {
+    return {
+      paid: false,
+      invoiceNumber: invoice.invoiceNumber,
+      amount: moneyString(invoice.total.toString()),
+      currency: invoice.currency,
+      transactionId: null,
+    };
+  }
+
+  const pending = await findPendingProviderPayments(invoice.id, "STRIPE");
+  const provider = PaymentProviderFactory.resolve(PaymentProviderName.STRIPE);
+
+  for (const payment of pending) {
+    if (!payment.providerTransactionId) continue;
+    try {
+      const captured = await provider.capturePayment({
+        providerTransactionId: payment.providerTransactionId,
+        metadata: { connectedAccountId },
+      });
+      if (captured.status !== "COMPLETED") {
+        continue;
+      }
+      const expectedAmount = moneyString(payment.amount.toString());
+      const settled = await completeProviderPayment({
+        organizationId: invoice.organizationId,
+        invoiceId: invoice.id,
+        customerId: invoice.customerId,
+        recordedById: invoice.createdById,
+        amount: expectedAmount,
+        currency: invoice.currency,
+        method: "CARD",
+        provider: "STRIPE",
+        providerTransactionId: payment.providerTransactionId,
+        captureId: captured.captureId,
+        paidAt: new Date(),
+        notes: "Stripe",
+      });
+      logger.info("Stripe checkout confirmed from return URL", {
+        invoiceId: invoice.id,
+        invoiceNumber: invoice.invoiceNumber,
+        paymentId: settled.payment.id,
+        sessionId: payment.providerTransactionId,
+        alreadyCompleted: settled.alreadyCompleted,
+      });
+      return {
+        paid: settled.status === "PAID",
+        invoiceNumber: invoice.invoiceNumber,
+        amount: expectedAmount,
+        currency: invoice.currency,
+        transactionId: captured.captureId ?? payment.providerTransactionId,
+      };
+    } catch (error) {
+      logger.warn("Stripe return confirmation skipped a pending session", {
+        invoiceId: invoice.id,
+        sessionId: payment.providerTransactionId,
+        message: error instanceof Error ? error.message : "unknown",
+      });
+    }
+  }
+
+  return {
+    paid: false,
+    invoiceNumber: invoice.invoiceNumber,
+    amount: moneyString(invoice.total.toString()),
+    currency: invoice.currency,
+    transactionId: null,
+  };
 }

@@ -1,11 +1,14 @@
 import { PaymentProviderFactory } from "../integrations/payments/provider-factory.js";
 import { PaymentProviderName } from "../integrations/payments/types.js";
+import { ServiceUnavailableError } from "../lib/errors.js";
 import { logger } from "../lib/logger.js";
 import { money, moneyString } from "../lib/money.js";
 import { findInvoiceById } from "../repositories/invoice.repository.js";
 import {
   completeProviderPayment,
+  createPendingProviderPayment,
   findPaymentByProviderTransactionId,
+  findPendingProviderPayments,
   markProviderPaymentStatus,
 } from "../repositories/payment.repository.js";
 import { findPaymentGatewayConfig } from "../repositories/payment-gateway.repository.js";
@@ -22,30 +25,48 @@ export async function handleStripeWebhook(input: {
     return { received: true };
   }
 
-  try {
-    await prisma.paymentWebhook.create({
-      data: {
-        provider: "STRIPE",
-        eventId: parsed.eventId,
-        payload: { eventType: parsed.eventType, orderId: parsed.orderId, invoiceId: parsed.invoiceId },
-        processed: false,
-      },
-    });
-  } catch {
+  const existing = await prisma.paymentWebhook.findUnique({
+    where: { provider_eventId: { provider: "STRIPE", eventId: parsed.eventId } },
+  });
+
+  if (existing?.processed) {
     logger.info("Stripe webhook duplicate ignored", { eventId: parsed.eventId });
     return { received: true };
+  }
+
+  if (!existing) {
+    try {
+      await prisma.paymentWebhook.create({
+        data: {
+          provider: "STRIPE",
+          eventId: parsed.eventId,
+          payload: { eventType: parsed.eventType, orderId: parsed.orderId, invoiceId: parsed.invoiceId },
+          processed: false,
+        },
+      });
+    } catch {
+      const raced = await prisma.paymentWebhook.findUnique({
+        where: { provider_eventId: { provider: "STRIPE", eventId: parsed.eventId } },
+      });
+      if (raced?.processed) {
+        return { received: true };
+      }
+    }
   }
 
   try {
     await processStripeWebhookEvent(parsed);
     await prisma.paymentWebhook.update({
       where: { provider_eventId: { provider: "STRIPE", eventId: parsed.eventId } },
-      data: { processed: true, processedAt: new Date() },
+      data: { processed: true, processedAt: new Date(), error: null },
     });
   } catch (error) {
     logger.error("Stripe webhook processing failed", {
       eventId: parsed.eventId,
       eventType: parsed.eventType,
+      invoiceId: parsed.invoiceId,
+      sessionId: parsed.orderId,
+      message: error instanceof Error ? error.message : "processing_failed",
     });
     await prisma.paymentWebhook.update({
       where: { provider_eventId: { provider: "STRIPE", eventId: parsed.eventId } },
@@ -54,6 +75,7 @@ export async function handleStripeWebhook(input: {
         error: error instanceof Error ? error.message.slice(0, 500) : "processing_failed",
       },
     });
+    throw error;
   }
 
   return { received: true };
@@ -70,11 +92,15 @@ async function processStripeWebhookEvent(parsed: {
   merchantId?: string;
 }): Promise<void> {
   if (parsed.status === "FAILED") {
-    if (parsed.orderId) {
-      const payment = await findPaymentByProviderTransactionId("STRIPE", parsed.orderId);
-      if (payment && payment.status === "PENDING") {
-        await markProviderPaymentStatus(payment.id, "FAILED");
-      }
+    const payment =
+      (parsed.orderId
+        ? await findPaymentByProviderTransactionId("STRIPE", parsed.orderId)
+        : null) ??
+      (parsed.invoiceId
+        ? (await findPendingProviderPayments(parsed.invoiceId, "STRIPE"))[0]
+        : null);
+    if (payment && payment.status === "PENDING") {
+      await markProviderPaymentStatus(payment.id, "FAILED");
     }
     return;
   }
@@ -85,8 +111,7 @@ async function processStripeWebhookEvent(parsed: {
 
   const gateway = await findPaymentGatewayConfig("STRIPE");
   if (!gateway || gateway.status !== "CONNECTED" || !gateway.merchantId) {
-    logger.warn("Stripe webhook ignored — gateway not connected");
-    return;
+    throw new ServiceUnavailableError("Stripe gateway is not connected", "STRIPE_NOT_CONNECTED");
   }
   if (parsed.merchantId && parsed.merchantId !== gateway.merchantId) {
     logger.warn("Stripe webhook merchant mismatch ignored", {
@@ -97,18 +122,18 @@ async function processStripeWebhookEvent(parsed: {
   }
 
   const sessionId = parsed.orderId;
-  if (!sessionId) {
-    // payment_intent.succeeded without session — try invoice metadata only
-    if (!parsed.invoiceId) return;
-  }
-
   let payment = sessionId
     ? await findPaymentByProviderTransactionId("STRIPE", sessionId)
     : null;
 
-  let invoiceId = payment?.invoiceId ?? parsed.invoiceId ?? null;
+  if (!payment && parsed.invoiceId) {
+    const pending = await findPendingProviderPayments(parsed.invoiceId, "STRIPE");
+    payment = pending[0] ?? null;
+  }
+
+  const invoiceId = payment?.invoiceId ?? parsed.invoiceId ?? null;
   if (!invoiceId) {
-    logger.warn("Stripe webhook missing invoice association", { sessionId });
+    logger.warn("Stripe webhook missing invoice association", { sessionId, eventType: parsed.eventType });
     return;
   }
 
@@ -117,6 +142,15 @@ async function processStripeWebhookEvent(parsed: {
     logger.warn("Stripe webhook invoice not found", { invoiceId });
     return;
   }
+
+  logger.info("Stripe webhook settling invoice", {
+    eventType: parsed.eventType,
+    invoiceId: invoice.id,
+    invoiceNumber: invoice.invoiceNumber,
+    previousStatus: invoice.status,
+    sessionId,
+    paymentIntentId: parsed.captureId,
+  });
 
   if (parsed.invoiceId && parsed.invoiceId !== invoice.id) {
     logger.warn("Stripe webhook invoice mismatch ignored", {
@@ -154,8 +188,8 @@ async function processStripeWebhookEvent(parsed: {
     return;
   }
 
-  if (!payment && sessionId) {
-    const { createPendingProviderPayment } = await import("../repositories/payment.repository.js");
+  const providerTransactionId = payment?.providerTransactionId ?? sessionId;
+  if (!payment && providerTransactionId) {
     payment = await createPendingProviderPayment({
       organizationId: invoice.organizationId,
       invoiceId: invoice.id,
@@ -165,11 +199,11 @@ async function processStripeWebhookEvent(parsed: {
       currency: invoice.currency,
       method: "CARD",
       provider: "STRIPE",
-      providerTransactionId: sessionId,
+      providerTransactionId,
     });
   }
 
-  if (!payment) {
+  if (!payment || !providerTransactionId) {
     return;
   }
 
@@ -182,7 +216,7 @@ async function processStripeWebhookEvent(parsed: {
     currency: invoice.currency,
     method: "CARD",
     provider: "STRIPE",
-    providerTransactionId: payment.providerTransactionId ?? sessionId ?? payment.id,
+    providerTransactionId,
     captureId: parsed.captureId,
     paidAt: new Date(),
     notes: "Stripe",
@@ -190,8 +224,12 @@ async function processStripeWebhookEvent(parsed: {
 
   logger.info("Stripe webhook settled payment", {
     invoiceId: invoice.id,
+    invoiceNumber: invoice.invoiceNumber,
     paymentId: settled.payment.id,
-    sessionId,
+    sessionId: providerTransactionId,
+    paymentIntentId: parsed.captureId,
+    previousStatus: invoice.status,
+    nextStatus: settled.status,
     alreadyCompleted: settled.alreadyCompleted,
   });
 }

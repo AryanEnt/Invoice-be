@@ -54,8 +54,8 @@ const colors = {
   muted: "#6b6d70",
   border: "#e6e7e8",
   soft: "#f8f8f9",
-  brand: "#d41920",
-  brandHover: "#b7141b",
+  brand: "#1f7a4d",
+  brandHover: "#18663f",
 };
 
 function displayInvoiceNumber(invoiceNumber: string): string {
@@ -93,7 +93,7 @@ export function InvoiceSentEmail({
           <Section style={styles.card}>
             <Section style={styles.header}>
               {companyLogoUrl ? (
-                <Img src={companyLogoUrl} alt={companyName} width="120" height="40" style={styles.logo} />
+                <Img src={companyLogoUrl} alt={companyName} width="200" height="72" style={styles.logo} />
               ) : null}
               <Text style={styles.companyName}>{companyName}</Text>
               <Heading as="h1" style={styles.invoiceHeading}>
@@ -294,7 +294,8 @@ const styles = {
   logo: {
     display: "block",
     margin: "0 auto 16px auto",
-    maxWidth: "140px",
+    maxWidth: "220px",
+    width: "200px",
     height: "auto",
   },
   companyName: {

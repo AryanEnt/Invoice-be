@@ -3,6 +3,7 @@ import { NotImplementedError, ServiceUnavailableError, ValidationError } from ".
 import {
   constructStripeWebhookEvent,
   createStripeCheckoutSession,
+  parseStripeAmount,
   retrieveStripeCheckoutSession,
 } from "../stripe/client.js";
 import { stripeCredentialsConfigured } from "../stripe/config.js";
@@ -83,7 +84,10 @@ export class StripePaymentProvider implements PaymentProvider {
       status: paid ? "COMPLETED" : "PENDING",
       providerTransactionId: session.id,
       captureId: paymentIntent,
-      amount: session.amount_total != null ? String(session.amount_total / 100) : undefined,
+      amount:
+        session.amount_total != null && session.currency
+          ? parseStripeAmount(session.amount_total, session.currency)
+          : undefined,
       currency: session.currency?.toUpperCase(),
     };
   }
@@ -132,7 +136,7 @@ export class StripePaymentProvider implements PaymentProvider {
           ? session.payment_intent
           : session.payment_intent?.id;
       if (session.amount_total != null && session.currency) {
-        result.amount = (session.amount_total / 100).toFixed(2);
+        result.amount = parseStripeAmount(session.amount_total, session.currency);
         result.currency = session.currency.toUpperCase();
       }
     } else if (event.type === "payment_intent.succeeded") {
@@ -142,7 +146,7 @@ export class StripePaymentProvider implements PaymentProvider {
       result.merchantId = typeof event.account === "string" ? event.account : undefined;
       result.status = "COMPLETED";
       if (intent.amount_received != null && intent.currency) {
-        result.amount = (intent.amount_received / 100).toFixed(2);
+        result.amount = parseStripeAmount(intent.amount_received, intent.currency);
         result.currency = intent.currency.toUpperCase();
       }
     } else if (event.type === "payment_intent.payment_failed") {

@@ -101,7 +101,7 @@ export async function listInvoices(query: {
   search?: string;
   status?: InvoiceStatus;
   overdue?: boolean;
-  boardColumn?: "new" | "sent" | "overdue" | "paid";
+  boardColumn?: "new" | "sent" | "overdue" | "paid" | "outstanding";
   customerId?: string;
   organizationId?: string;
   userIds?: string[];
@@ -136,6 +136,10 @@ export async function listInvoices(query: {
         return {
           status: { notIn: ["DRAFT", "CANCELLED", "PAID"] },
           dueDate: { lt: today },
+        };
+      case "outstanding":
+        return {
+          status: { in: ["SENT", "VIEWED", "OVERDUE", "PARTIALLY_PAID"] },
         };
       case "paid":
         return { status: "PAID" };

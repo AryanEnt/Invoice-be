@@ -134,6 +134,36 @@ export async function markProviderPaymentStatus(
   });
 }
 
+export async function cancelPendingProviderPayments(input: {
+  invoiceId: string;
+  provider?: PaymentProvider;
+  exceptTransactionId?: string;
+}): Promise<number> {
+  const result = await prisma.payment.updateMany({
+    where: {
+      invoiceId: input.invoiceId,
+      status: "PENDING",
+      ...(input.provider ? { provider: input.provider } : {}),
+      ...(input.exceptTransactionId
+        ? { providerTransactionId: { not: input.exceptTransactionId } }
+        : {}),
+    },
+    data: { status: "CANCELLED" },
+  });
+  return result.count;
+}
+
+export async function findPendingProviderPayments(
+  invoiceId: string,
+  provider: PaymentProvider,
+): Promise<PaymentRecord[]> {
+  return prisma.payment.findMany({
+    where: { invoiceId, provider, status: "PENDING" },
+    include: paymentInclude,
+    orderBy: { createdAt: "desc" },
+  });
+}
+
 export async function markPaymentReceiptSent(id: string): Promise<boolean> {
   const result = await prisma.payment.updateMany({
     where: { id, receiptSentAt: null },
@@ -244,7 +274,7 @@ export async function completeProviderPayment(data: {
           status: "COMPLETED",
           amount: data.amount,
           currency: data.currency,
-          metadata: { source: "paypal", orderId: data.providerTransactionId, captureId: data.captureId ?? null },
+          metadata: { source: data.provider.toLowerCase(), orderId: data.providerTransactionId, captureId: data.captureId ?? null },
         },
       });
     }
@@ -254,6 +284,14 @@ export async function completeProviderPayment(data: {
     await tx.invoice.update({
       where: { id: invoice.id },
       data: { amountPaid, status },
+    });
+    await tx.payment.updateMany({
+      where: {
+        invoiceId: invoice.id,
+        status: "PENDING",
+        id: { not: payment.id },
+      },
+      data: { status: "CANCELLED" },
     });
 
     const record = await tx.payment.findUniqueOrThrow({

@@ -8,7 +8,10 @@ import {
   startStripeConnect,
   testStripeConnection,
 } from "../services/stripe-connect.service.js";
-import { createPublicStripeCheckout } from "../services/stripe-checkout.service.js";
+import {
+  confirmPublicStripeCheckout,
+  createPublicStripeCheckout,
+} from "../services/stripe-checkout.service.js";
 import { handleStripeWebhook } from "../services/stripe-webhook.service.js";
 import { success } from "../utils/api-response.js";
 
@@ -69,6 +72,12 @@ export async function disconnectStripeController(req: Request, res: Response): P
 export async function createPublicStripeCheckoutController(req: Request, res: Response): Promise<void> {
   const token = typeof req.params.token === "string" ? req.params.token : "";
   const result = await createPublicStripeCheckout(token);
+  res.status(200).json(success(result));
+}
+
+export async function confirmPublicStripeCheckoutController(req: Request, res: Response): Promise<void> {
+  const token = typeof req.params.token === "string" ? req.params.token : "";
+  const result = await confirmPublicStripeCheckout(token);
   res.status(200).json(success(result));
 }
 

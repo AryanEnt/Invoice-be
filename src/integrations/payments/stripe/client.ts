@@ -1,7 +1,7 @@
 import Stripe from "stripe";
 import { ServiceUnavailableError, ValidationError } from "../../../lib/errors.js";
 import { logger } from "../../../lib/logger.js";
-import { money } from "../../../lib/money.js";
+import { money, moneyString } from "../../../lib/money.js";
 import {
   STRIPE_OAUTH_DEAUTHORIZE_URL,
   STRIPE_OAUTH_TOKEN_URL,
@@ -34,31 +34,40 @@ export function clearStripeClientCache(): void {
   stripeClient = null;
 }
 
+const ZERO_DECIMAL_CURRENCIES = new Set([
+  "bif",
+  "clp",
+  "djf",
+  "gnf",
+  "jpy",
+  "kmf",
+  "krw",
+  "mga",
+  "pyg",
+  "rwf",
+  "ugx",
+  "vnd",
+  "vuv",
+  "xaf",
+  "xof",
+  "xpf",
+]);
+
 export function formatStripeAmount(amount: string, currency: string): number {
-  const zeroDecimal = new Set([
-    "bif",
-    "clp",
-    "djf",
-    "gnf",
-    "jpy",
-    "kmf",
-    "krw",
-    "mga",
-    "pyg",
-    "rwf",
-    "ugx",
-    "vnd",
-    "vuv",
-    "xaf",
-    "xof",
-    "xpf",
-  ]);
   const code = currency.trim().toLowerCase();
   const value = money(amount);
-  if (zeroDecimal.has(code)) {
+  if (ZERO_DECIMAL_CURRENCIES.has(code)) {
     return Math.round(value.toNumber());
   }
   return Math.round(value.times(100).toNumber());
+}
+
+export function parseStripeAmount(unitAmount: number, currency: string): string {
+  const code = currency.trim().toLowerCase();
+  if (ZERO_DECIMAL_CURRENCIES.has(code)) {
+    return moneyString(String(unitAmount));
+  }
+  return moneyString(money(String(unitAmount)).div(100));
 }
 
 export type StripeOAuthTokenResponse = {
