@@ -35,10 +35,9 @@ export function getR2Client(): S3Client {
         secretAccessKey: env.R2_SECRET_ACCESS_KEY!,
       },
       forcePathStyle: true,
-      // AWS SDK v3 signs CRC32 checksums by default. Browser PUTs to presigned
-      // URLs cannot satisfy those headers, which shows up as a fetch/CORS error.
       requestChecksumCalculation: "WHEN_REQUIRED",
       responseChecksumValidation: "WHEN_REQUIRED",
+      maxAttempts: 2,
     });
     corsSync ??= syncR2Cors(client).catch((error) => {
       logger.warn("Unable to apply R2 CORS rules", {

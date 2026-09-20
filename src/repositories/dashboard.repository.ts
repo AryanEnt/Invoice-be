@@ -128,11 +128,11 @@ export async function loadDashboardSnapshot(
     emailStatusGroups,
     currencyGroups,
     paymentCurrencyGroups,
-    outstandingRows,
-    overdueRows,
+    outstandingCurrencyGroups,
+    overdueCurrencyGroups,
     sentInvoiceDates,
     paidInvoiceDates,
-    allInRangeInvoices,
+    administratorInvoiceGroups,
     administratorRows,
     recentCustomerRows,
     revenueAgg,
@@ -202,13 +202,15 @@ export async function loadDashboardSnapshot(
       where: paymentWhere,
       _sum: { amount: true },
     }),
-    prisma.invoice.findMany({
+    prisma.invoice.groupBy({
+      by: ["currency"],
       where: outstandingWhere,
-      select: { currency: true, total: true, amountPaid: true },
+      _sum: { total: true, amountPaid: true },
     }),
-    prisma.invoice.findMany({
+    prisma.invoice.groupBy({
+      by: ["currency"],
       where: overdueWhere,
-      select: { currency: true, total: true, amountPaid: true },
+      _sum: { total: true, amountPaid: true },
     }),
     prisma.invoice.findMany({
       where: { ...invoiceInRange, sentAt: { not: null } },
@@ -218,16 +220,11 @@ export async function loadDashboardSnapshot(
       where: { ...invoiceInRange, status: "PAID" },
       select: { updatedAt: true },
     }),
-    prisma.invoice.findMany({
+    prisma.invoice.groupBy({
+      by: ["createdById", "assignedMemberId", "status", "currency"],
       where: invoiceInRange,
-      select: {
-        createdById: true,
-        assignedMemberId: true,
-        status: true,
-        currency: true,
-        total: true,
-        amountPaid: true,
-      },
+      _count: { _all: true },
+      _sum: { total: true, amountPaid: true },
     }),
     prisma.user.findMany({
       where: { ...userWhere, role: "ADMIN" },
@@ -374,8 +371,8 @@ export async function loadDashboardSnapshot(
       amount: moneyString(group._sum.amount?.toString() ?? "0"),
     }))
     .sort((left, right) => money(right.amount).comparedTo(money(left.amount)));
-  const outstandingByCurrency = sumBalancesByCurrency(outstandingRows);
-  const overdueByCurrency = sumBalancesByCurrency(overdueRows);
+  const outstandingByCurrency = sumGroupedBalancesByCurrency(outstandingCurrencyGroups);
+  const overdueByCurrency = sumGroupedBalancesByCurrency(overdueCurrencyGroups);
 
   const customerIds = customerGroups.map((group) => group.customerId);
   const memberIds = memberGroups
@@ -528,7 +525,7 @@ export async function loadDashboardSnapshot(
     administratorOverview: buildAdministratorOverview({
       administrators: administratorRows,
       members,
-      invoices: allInRangeInvoices,
+      groups: administratorInvoiceGroups,
       currency,
     }),
     recentCustomers: recentCustomerRows.map((customer) => {
@@ -558,13 +555,13 @@ function buildAdministratorOverview(input: {
     _count: { managedMembers: number; managedCustomers: number };
   }>;
   members: Array<{ id: string; administratorId: string | null }>;
-  invoices: Array<{
+  groups: Array<{
     createdById: string;
     assignedMemberId: string | null;
     status: InvoiceStatus;
     currency: string;
-    total: { toString(): string };
-    amountPaid: { toString(): string };
+    _count: { _all: number };
+    _sum: { total: unknown; amountPaid: unknown };
   }>;
   currency: string;
 }): DashboardAdministratorOverview[] {
@@ -575,31 +572,41 @@ function buildAdministratorOverview(input: {
   );
 
   return input.administrators.map((admin) => {
-    const related = input.invoices.filter((invoice) => {
-      if (invoice.currency !== input.currency) {
+    const related = input.groups.filter((group) => {
+      if (group.currency !== input.currency) {
         return false;
       }
-      if (invoice.createdById === admin.id) {
+      if (group.createdById === admin.id) {
         return true;
       }
       const assignedAdmin =
-        invoice.assignedMemberId === admin.id
+        group.assignedMemberId === admin.id
           ? admin.id
-          : invoice.assignedMemberId
-            ? memberToAdmin.get(invoice.assignedMemberId)
+          : group.assignedMemberId
+            ? memberToAdmin.get(group.assignedMemberId)
             : undefined;
       return assignedAdmin === admin.id;
     });
-    const total = related.reduce((sum, invoice) => sum.plus(invoice.total.toString()), money(0));
-    const paid = related.reduce((sum, invoice) => sum.plus(invoice.amountPaid.toString()), money(0));
+    const total = related.reduce(
+      (sum, group) => sum.plus(group._sum.total?.toString() ?? "0"),
+      money(0),
+    );
+    const paid = related.reduce(
+      (sum, group) => sum.plus(group._sum.amountPaid?.toString() ?? "0"),
+      money(0),
+    );
+    const invoiceCount = related.reduce((sum, group) => sum + group._count._all, 0);
+    const paidInvoiceCount = related
+      .filter((group) => group.status === "PAID")
+      .reduce((sum, group) => sum + group._count._all, 0);
     return {
       administratorId: admin.id,
       administratorName: `${admin.firstName} ${admin.lastName}`.trim(),
       status: admin.status,
       memberCount: admin._count.managedMembers,
       customerCount: admin._count.managedCustomers,
-      invoiceCount: related.length,
-      paidInvoiceCount: related.filter((invoice) => invoice.status === "PAID").length,
+      invoiceCount,
+      paidInvoiceCount,
       revenue: moneyString(paid),
       outstanding: moneyString(total.minus(paid)),
       currency: input.currency,
@@ -607,16 +614,18 @@ function buildAdministratorOverview(input: {
   });
 }
 
-function sumBalancesByCurrency(
-  rows: Array<{ currency: string; total: { toString(): string }; amountPaid: { toString(): string } }>,
+function sumGroupedBalancesByCurrency(
+  groups: Array<{
+    currency: string;
+    _sum: { total: unknown; amountPaid: unknown };
+  }>,
 ): DashboardMoneyByCurrency[] {
-  const buckets = new Map<string, ReturnType<typeof money>>();
-  for (const row of rows) {
-    const current = buckets.get(row.currency) ?? money(0);
-    buckets.set(row.currency, current.plus(row.total.toString()).minus(row.amountPaid.toString()));
-  }
-  return [...buckets.entries()]
-    .map(([currency, amount]) => ({ currency, amount: moneyString(amount) }))
+  return groups
+    .map((group) => {
+      const total = money(group._sum.total?.toString() ?? "0");
+      const paid = money(group._sum.amountPaid?.toString() ?? "0");
+      return { currency: group.currency, amount: moneyString(total.minus(paid)) };
+    })
     .sort((left, right) => money(right.amount).comparedTo(money(left.amount)));
 }
 

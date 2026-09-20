@@ -13,6 +13,7 @@ import {
 } from "../repositories/payment.repository.js";
 import { findPaymentGatewayConfig } from "../repositories/payment-gateway.repository.js";
 import { prisma } from "../lib/prisma.js";
+import { acquireLock, releaseLock, webhookLockKey } from "../lib/redis-lock.js";
 
 export async function handleStripeWebhook(input: {
   headers: Record<string, string | string[] | undefined>;
@@ -30,10 +31,17 @@ export async function handleStripeWebhook(input: {
   });
 
   if (existing?.processed) {
-    logger.info("Stripe webhook duplicate ignored", { eventId: parsed.eventId });
+    logger.info("Stripe webhook duplicate ignored", { eventId: parsed.eventId, provider: "STRIPE" });
     return { received: true };
   }
 
+  const lock = await acquireLock(webhookLockKey("STRIPE", parsed.eventId), 30);
+  if (!lock.acquired && !lock.unavailable) {
+    logger.info("Stripe webhook concurrent processing skipped", { eventId: parsed.eventId });
+    return { received: true };
+  }
+
+  try {
   if (!existing) {
     try {
       await prisma.paymentWebhook.create({
@@ -79,6 +87,11 @@ export async function handleStripeWebhook(input: {
   }
 
   return { received: true };
+  } finally {
+    if (lock.acquired) {
+      await releaseLock(webhookLockKey("STRIPE", parsed.eventId), lock.token);
+    }
+  }
 }
 
 async function processStripeWebhookEvent(parsed: {

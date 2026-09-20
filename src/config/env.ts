@@ -7,6 +7,11 @@ const envSchema = z.object({
   NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
   PORT: z.coerce.number().int().positive().default(4000),
   DATABASE_URL: z.string().min(1, "DATABASE_URL is required"),
+  REDIS_URL: z.preprocess(
+    (value) => (value === "" ? undefined : value),
+    z.string().min(1).optional(),
+  ),
+  WORKER_CONCURRENCY: z.coerce.number().int().min(1).max(8).default(2),
   JWT_SECRET: z.string().min(16, "JWT_SECRET must be at least 16 characters"),
   CORS_ORIGIN: z.string().min(1).default("http://localhost:3000"),
   SESSION_COOKIE_NAME: z.string().min(1).default("sid"),
@@ -137,6 +142,11 @@ function parseEnv(): Env {
   if (data.NODE_ENV === "production" && !data.PAYMENT_TOKEN_ENCRYPTION_KEY) {
     throw new Error(
       "Invalid environment configuration: PAYMENT_TOKEN_ENCRYPTION_KEY is required in production",
+    );
+  }
+  if (data.NODE_ENV === "production" && !data.REDIS_URL) {
+    throw new Error(
+      "Invalid environment configuration: REDIS_URL is required in production",
     );
   }
 

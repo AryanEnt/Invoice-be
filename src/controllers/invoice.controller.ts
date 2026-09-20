@@ -84,8 +84,10 @@ export async function duplicateInvoiceController(req: Request, res: Response): P
 export async function sendInvoiceController(req: Request, res: Response): Promise<void> {
   const actor = requireActor(req);
   const params = validate(uuidParamSchema, req.params);
-  const invoice = await sendInvoiceAccount(actor, params.id);
-  res.status(200).json(success({ invoice }));
+  const result = await sendInvoiceAccount(actor, params.id);
+  res.status(result.queued ? 202 : 200).json(
+    success({ invoice: result.invoice, queued: result.queued }),
+  );
 }
 
 export async function shareInvoiceLinkController(req: Request, res: Response): Promise<void> {

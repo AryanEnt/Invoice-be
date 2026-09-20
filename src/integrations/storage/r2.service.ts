@@ -8,6 +8,7 @@ import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { randomUUID } from "node:crypto";
 import { extname } from "node:path";
 import { ServiceUnavailableError, ValidationError } from "../../lib/errors.js";
+import { withTimeout } from "../../lib/timeout.js";
 import { getR2BucketName, getR2Client, isR2Configured } from "./r2.client.js";
 
 const LOGO_MAX_BYTES = 2 * 1024 * 1024;
@@ -97,14 +98,18 @@ export async function uploadObject(input: {
   cacheControl?: string;
 }): Promise<string> {
   assertR2Ready();
-  await getR2Client().send(
-    new PutObjectCommand({
-      Bucket: getR2BucketName(),
-      Key: input.key,
-      Body: input.body,
-      ContentType: input.contentType,
-      CacheControl: input.cacheControl,
-    }),
+  await withTimeout(
+    getR2Client().send(
+      new PutObjectCommand({
+        Bucket: getR2BucketName(),
+        Key: input.key,
+        Body: input.body,
+        ContentType: input.contentType,
+        CacheControl: input.cacheControl,
+      }),
+    ),
+    15_000,
+    "R2 upload",
   );
   return input.key;
 }
@@ -112,11 +117,15 @@ export async function uploadObject(input: {
 export async function getObject(key: string): Promise<StoredObject | null> {
   assertR2Ready();
   try {
-    const result = await getR2Client().send(
-      new GetObjectCommand({
-        Bucket: getR2BucketName(),
-        Key: key,
-      }),
+    const result = await withTimeout(
+      getR2Client().send(
+        new GetObjectCommand({
+          Bucket: getR2BucketName(),
+          Key: key,
+        }),
+      ),
+      15_000,
+      "R2 get",
     );
     if (!result.Body) {
       return null;

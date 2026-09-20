@@ -57,7 +57,7 @@ export async function uploadOrganizationLogoController(
   const body = req.body;
 
   if (!contentType || !Buffer.isBuffer(body) || body.byteLength === 0) {
-    throw new ValidationError("Upload a PNG, JPG, WebP, or SVG logo file");
+    throw new ValidationError("Upload a PNG, JPG, or WebP logo file");
   }
 
   const organization = await uploadOrganizationLogo(actor, { contentType, body });
@@ -124,7 +124,7 @@ export async function uploadAdminBrandingLogoController(
   const body = req.body;
 
   if (!contentType || !Buffer.isBuffer(body) || body.byteLength === 0) {
-    throw new ValidationError("Upload a PNG, JPG, WebP, or SVG logo file");
+    throw new ValidationError("Upload a PNG, JPG, or WebP logo file");
   }
 
   const branding = await uploadAdminBrandingLogo(actor, { contentType, body });

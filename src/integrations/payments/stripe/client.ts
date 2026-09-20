@@ -25,6 +25,8 @@ export function getStripeClient(): Stripe {
     stripeClient = new Stripe(key, {
       apiVersion: "2026-08-26.dahlia",
       typescript: true,
+      timeout: 20_000,
+      maxNetworkRetries: 0,
     });
   }
   return stripeClient;

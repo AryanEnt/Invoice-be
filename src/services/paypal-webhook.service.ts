@@ -4,6 +4,7 @@ import { formatPayPalAmount, getPayPalOrder, orderAmountMatches } from "../integ
 import { logger } from "../lib/logger.js";
 import { moneyString } from "../lib/money.js";
 import { prisma } from "../lib/prisma.js";
+import { acquireLock, releaseLock, webhookLockKey } from "../lib/redis-lock.js";
 import { findInvoiceById } from "../repositories/invoice.repository.js";
 import { findPaymentGatewayConfig } from "../repositories/payment-gateway.repository.js";
 import {
@@ -29,10 +30,17 @@ export async function handlePayPalWebhook(input: {
   });
 
   if (existing?.processed) {
-    logger.info("PayPal webhook duplicate ignored", { eventId: parsed.eventId });
+    logger.info("PayPal webhook duplicate ignored", { eventId: parsed.eventId, provider: "PAYPAL" });
     return { received: true };
   }
 
+  const lock = await acquireLock(webhookLockKey("PAYPAL", parsed.eventId), 30);
+  if (!lock.acquired && !lock.unavailable) {
+    logger.info("PayPal webhook concurrent processing skipped", { eventId: parsed.eventId });
+    return { received: true };
+  }
+
+  try {
   if (!existing) {
     try {
       await prisma.paymentWebhook.create({
@@ -80,6 +88,11 @@ export async function handlePayPalWebhook(input: {
   }
 
   return { received: true };
+  } finally {
+    if (lock.acquired) {
+      await releaseLock(webhookLockKey("PAYPAL", parsed.eventId), lock.token);
+    }
+  }
 }
 
 async function processPayPalWebhookEvent(parsed: {

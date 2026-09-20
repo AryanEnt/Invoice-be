@@ -1,6 +1,19 @@
 import type { CatalogKind, InvoiceStatus } from "@prisma/client";
 import { ConflictError, ForbiddenError, NotFoundError, ValidationError } from "../lib/errors.js";
-import { sendInvoiceEmail } from "../integrations/email/send-invoice-email.js";
+import { env } from "../config/env.js";
+import { logger } from "../lib/logger.js";
+import { acquireLock, invoiceSendLockKey, releaseLock } from "../lib/redis-lock.js";
+import { requestLogFields } from "../lib/request-context.js";
+import { enqueueInvoiceEmailJob } from "../queues/invoice-email.queue.js";
+import {
+  createOutboxEvent,
+  findActiveOutboxEvent,
+  markOutboxEnqueued,
+} from "../repositories/outbox.repository.js";
+import {
+  deliverInvoiceEmail,
+  isUniqueViolation,
+} from "./invoice-email-job.service.js";
 import { assertInvoiceAccess } from "../lib/invoice-access.js";
 import { generateInvoiceShareToken, invoiceShareUrl } from "../lib/invoice-share.js";
 import { toPublicInvoiceView, type PublicInvoiceView } from "../lib/invoice-public-view.js";
@@ -519,7 +532,16 @@ export async function deleteInvoiceAccount(actor: AuthUser, id: string): Promise
   });
 }
 
-export async function sendInvoiceAccount(actor: AuthUser, id: string): Promise<InvoiceView> {
+export type SendInvoiceResult = {
+  invoice: InvoiceView;
+  queued: boolean;
+};
+
+function shouldQueueInvoiceEmail(): boolean {
+  return env.NODE_ENV !== "test" && Boolean(env.REDIS_URL);
+}
+
+export async function sendInvoiceAccount(actor: AuthUser, id: string): Promise<SendInvoiceResult> {
   const invoice = await findInvoiceById(id);
   if (!invoice) {
     throw new NotFoundError("Invoice not found");
@@ -535,42 +557,83 @@ export async function sendInvoiceAccount(actor: AuthUser, id: string): Promise<I
     throw new ValidationError("This customer does not have an email address");
   }
 
-  const shareable = await ensureInvoiceShareToken(invoice.id, invoice.shareToken);
+  await ensureInvoiceShareToken(invoice.id, invoice.shareToken);
 
-  try {
-    await sendInvoiceEmail(shareable);
-  } catch (error) {
-    const message = error instanceof Error ? error.message : "Email failed";
-    await updateInvoice(invoice.id, {
-      emailStatus: "FAILED",
-      emailLastError: message.slice(0, 500),
-    });
-    throw error;
+  if (!shouldQueueInvoiceEmail()) {
+    const delivered = await deliverInvoiceEmail({ invoiceId: invoice.id, actorId: actor.id });
+    return { invoice: delivered, queued: false };
   }
 
-  const issued = invoice.status === "DRAFT";
-  const updated = await updateInvoice(invoice.id, {
-    emailStatus: "SENT",
-    emailSentAt: new Date(),
-    emailLastError: null,
-    ...(issued
-      ? {
-          status: "SENT" as const,
-          sentAt: new Date(),
-        }
-      : {}),
-  });
+  const lock = await acquireLock(invoiceSendLockKey(invoice.id), 30);
+  if (!lock.acquired && !lock.unavailable) {
+    const current = await findInvoiceById(invoice.id);
+    return { invoice: toInvoiceView(current ?? invoice), queued: true };
+  }
 
-  await recordAudit({
-    actorId: actor.id,
-    action: "INVOICE_SENT",
-    entity: "Invoice",
-    entityId: updated.id,
-    organizationId: updated.organizationId,
-    metadata: { invoiceNumber: updated.invoiceNumber, channel: "email" },
-  });
+  try {
+    const existing = await findActiveOutboxEvent("INVOICE_EMAIL", invoice.id);
+    if (existing) {
+      logger.info(
+        "Invoice send already queued",
+        requestLogFields({ invoiceId: invoice.id, jobId: existing.id, userId: actor.id }),
+      );
+      return { invoice: toInvoiceView(invoice), queued: true };
+    }
 
-  return toInvoiceView(updated);
+    let outbox: { id: string };
+    try {
+      outbox = await createOutboxEvent({
+        type: "INVOICE_EMAIL",
+        aggregateId: invoice.id,
+        payload: { actorId: actor.id, organizationId: invoice.organizationId },
+      });
+    } catch (error) {
+      if (!isUniqueViolation(error)) {
+        throw error;
+      }
+      const raced = await findActiveOutboxEvent("INVOICE_EMAIL", invoice.id);
+      return { invoice: toInvoiceView(invoice), queued: Boolean(raced) };
+    }
+
+    const enqueued = await enqueueInvoiceEmailJob({
+      outboxId: outbox.id,
+      invoiceId: invoice.id,
+      actorId: actor.id,
+    });
+    if (enqueued) {
+      await markOutboxEnqueued(outbox.id);
+    } else {
+      logger.warn(
+        "Invoice email outbox stored without queue accept; worker will recover",
+        requestLogFields({ invoiceId: invoice.id, jobId: outbox.id }),
+      );
+    }
+
+    await recordAudit({
+      actorId: actor.id,
+      action: "INVOICE_SEND_QUEUED",
+      entity: "Invoice",
+      entityId: invoice.id,
+      organizationId: invoice.organizationId,
+      metadata: { invoiceNumber: invoice.invoiceNumber, outboxId: outbox.id },
+    });
+
+    logger.info(
+      "Invoice send queued",
+      requestLogFields({
+        invoiceId: invoice.id,
+        jobId: outbox.id,
+        userId: actor.id,
+        organizationId: invoice.organizationId,
+      }),
+    );
+
+    return { invoice: toInvoiceView(invoice), queued: true };
+  } finally {
+    if (lock.acquired) {
+      await releaseLock(invoiceSendLockKey(invoice.id), lock.token);
+    }
+  }
 }
 
 async function ensureInvoiceShareToken(

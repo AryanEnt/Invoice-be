@@ -1,7 +1,50 @@
 import type { Request, Response } from "express";
-import { rateLimit, type Options, type RateLimitRequestHandler } from "express-rate-limit";
+import { rateLimit, type Options, type RateLimitRequestHandler, type Store } from "express-rate-limit";
+import { RedisStore } from "rate-limit-redis";
 import { env } from "../config/env.js";
+import { logger } from "../lib/logger.js";
+import { getRedis } from "../lib/redis.js";
 import { failure } from "../utils/api-response.js";
+
+let redisStore: Store | undefined;
+let redisStoreInitFailed = false;
+
+function getSharedRateLimitStore(): Store | undefined {
+  if (env.NODE_ENV === "test" && process.env.FORCE_RATE_LIMIT !== "1") {
+    return undefined;
+  }
+  if (redisStore) {
+    return redisStore;
+  }
+  if (redisStoreInitFailed) {
+    return undefined;
+  }
+  const redis = getRedis();
+  if (!redis) {
+    return undefined;
+  }
+  try {
+    redisStore = new RedisStore({
+      prefix: "outinvoice:ratelimit:",
+      sendCommand: async (...args: string[]) => {
+        if (redis.status === "wait") {
+          await redis.connect();
+        }
+        const [command, ...rest] = args;
+        return redis.call(command, ...rest) as Promise<
+          boolean | number | string | (boolean | number | string)[]
+        >;
+      },
+    });
+    return redisStore;
+  } catch (error) {
+    redisStoreInitFailed = true;
+    logger.warn("Redis rate-limit store unavailable; using in-memory fallback", {
+      message: error instanceof Error ? error.message : String(error),
+    });
+    return undefined;
+  }
+}
 
 /**
  * Prefer Cloudflare's client IP when present (set by CF edge, not spoofable by browsers
@@ -54,6 +97,7 @@ export function createAppRateLimiter(input: CreateLimiterInput): RateLimitReques
     validate: { keyGeneratorIpFallback: false },
     skipSuccessfulRequests: input.skipSuccessfulRequests,
     skipFailedRequests: input.skipFailedRequests,
+    store: getSharedRateLimitStore(),
     handler: (_req: Request, res: Response) => {
       res.setHeader("Retry-After", String(windowSeconds));
       res

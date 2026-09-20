@@ -2,6 +2,7 @@ import { Resend } from "resend";
 import { env } from "../config/env.js";
 import { ServiceUnavailableError, ValidationError } from "../lib/errors.js";
 import { logger } from "../lib/logger.js";
+import { withTimeout } from "../lib/timeout.js";
 
 export type EmailAttachmentInput = {
   filename: string;
@@ -148,24 +149,28 @@ export async function sendEmail(input: SendEmailInput): Promise<SendEmailResult>
   const toLog = env.NODE_ENV === "production" ? redactEmail(to) : to;
 
   try {
-    const result = await getResendClient().emails.send({
-      from,
-      to: [to],
-      subject: input.subject,
-      html: input.html,
-      ...(input.text ? { text: input.text } : {}),
-      ...(replyTo ? { replyTo } : {}),
-      ...(input.attachments?.length
-        ? {
-            attachments: input.attachments.map((attachment) => ({
-              filename: attachment.filename,
-              content: attachment.content,
-              contentType: attachment.contentType,
-              ...(attachment.contentId ? { contentId: attachment.contentId } : {}),
-            })),
-          }
-        : {}),
-    });
+    const result = await withTimeout(
+      getResendClient().emails.send({
+        from,
+        to: [to],
+        subject: input.subject,
+        html: input.html,
+        ...(input.text ? { text: input.text } : {}),
+        ...(replyTo ? { replyTo } : {}),
+        ...(input.attachments?.length
+          ? {
+              attachments: input.attachments.map((attachment) => ({
+                filename: attachment.filename,
+                content: attachment.content,
+                contentType: attachment.contentType,
+                ...(attachment.contentId ? { contentId: attachment.contentId } : {}),
+              })),
+            }
+          : {}),
+      }),
+      20_000,
+      "Resend",
+    );
 
     if (result.error) {
       logger.error("Resend email send failed", {

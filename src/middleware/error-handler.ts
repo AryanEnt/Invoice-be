@@ -42,6 +42,7 @@ export function errorHandler(
   }
 
   logger.error("Unhandled server error", {
+    requestId: _req.requestId,
     name: err instanceof Error ? err.name : "UnknownError",
     message: err instanceof Error ? err.message : "Unknown error",
     ...(env.NODE_ENV !== "production" && err instanceof Error && err.stack

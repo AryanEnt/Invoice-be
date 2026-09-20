@@ -56,12 +56,20 @@ export const invoiceSendRateLimit = createAppRateLimiter({
   windowMs: 15 * 60 * 1000,
   limit: 30,
   message: "Too many invoice emails sent. Try again later.",
+  keyGenerator: (req: Request) => {
+    const userId = req.authUser?.id ?? "anon";
+    return `${getClientIp(req)}:${userId}`;
+  },
 });
 
 export const invoicePdfRateLimit = createAppRateLimiter({
   windowMs: 15 * 60 * 1000,
   limit: 40,
   message: "Too many PDF downloads. Try again later.",
+  keyGenerator: (req: Request) => {
+    const userId = req.authUser?.id ?? "anon";
+    return `${getClientIp(req)}:${userId}`;
+  },
 });
 
 export const reportRateLimit = createAppRateLimiter({
@@ -74,6 +82,10 @@ export const dashboardRateLimit = createAppRateLimiter({
   windowMs: 60 * 1000,
   limit: 60,
   message: "Too many dashboard requests. Try again later.",
+  keyGenerator: (req: Request) => {
+    const userId = req.authUser?.id ?? "anon";
+    return `${getClientIp(req)}:${userId}`;
+  },
 });
 
 export const publicInvoiceRateLimit = createAppRateLimiter({

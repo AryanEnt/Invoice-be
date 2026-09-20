@@ -10,6 +10,7 @@ import { csrfOriginCheck } from "./middleware/csrf-origin.js";
 import { errorHandler } from "./middleware/error-handler.js";
 import { notFoundHandler } from "./middleware/not-found.js";
 import { paypalWebhookRateLimit } from "./middleware/paypal-rate-limit.js";
+import { requestId } from "./middleware/request-id.js";
 import { stripeWebhookRateLimit } from "./middleware/stripe-rate-limit.js";
 import { apiRouter } from "./routes/index.js";
 import { asyncHandler } from "./utils/async-handler.js";
@@ -22,6 +23,7 @@ export function createApp() {
   app.set("trust proxy", 1);
 
   app.disable("x-powered-by");
+  app.use(requestId);
   app.use(
     helmet({
       contentSecurityPolicy: false,

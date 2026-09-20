@@ -14,6 +14,7 @@ export default defineConfig({
       BCRYPT_ROUNDS: "4",
       SESSION_COOKIE_NAME: "sid",
       SESSION_DAYS: "7",
+      REDIS_URL: "",
     },
   },
 });

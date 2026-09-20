@@ -109,6 +109,7 @@ async function paypalFetch(path: string, init: RequestInit, accessToken?: string
   return fetch(`${paypalApiBaseUrl()}${path}`, {
     ...init,
     headers,
+    signal: init.signal ?? AbortSignal.timeout(15_000),
   });
 }
 

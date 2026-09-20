@@ -1,6 +1,7 @@
 import { Permissions } from "../config/permissions.js";
 import { resolveDateRange, type DatePreset } from "../lib/date-range.js";
 import { resolveAdministratorId, resolveInvoiceUserScope } from "../lib/admin-scope.js";
+import { dashboardCacheKey, getJsonCache, setJsonCache } from "../lib/cache.js";
 import { loadDashboardSnapshot } from "../repositories/dashboard.repository.js";
 import { getSoleOrganizationId, listOrganizations } from "../repositories/organization.repository.js";
 import type { AuthUser } from "../types/auth.js";
@@ -25,11 +26,13 @@ export async function getDashboard(
   const userScope = await resolveInvoiceUserScope(actor);
   const administratorId = await resolveAdministratorId(actor);
 
-  const snapshot = await loadDashboardSnapshot({
+  const snapshot = await loadCachedDashboardSnapshot({
     organizationId,
     userIds: userScope?.userIds,
     administratorId: isAdmin ? actor.id : (administratorId ?? undefined),
     range,
+    actorId: actor.id,
+    role: actor.role,
   });
 
   const isSuperAdmin = actor.role === "SUPER_ADMIN";
@@ -107,4 +110,36 @@ export async function getDashboard(
     administratorOverview: snapshot.administratorOverview,
     recentCustomers: snapshot.recentCustomers,
   };
+}
+
+async function loadCachedDashboardSnapshot(input: {
+  organizationId?: string;
+  userIds?: string[];
+  administratorId?: string;
+  range: { start: Date; end: Date };
+  actorId: string;
+  role: string;
+}) {
+  const queryScope = {
+    organizationId: input.organizationId,
+    userIds: input.userIds,
+    administratorId: input.administratorId,
+    range: input.range,
+  };
+  const cacheKey = dashboardCacheKey({
+    role: input.role,
+    actorId: input.actorId,
+    organizationId: input.organizationId ?? null,
+    userIds: input.userIds ?? null,
+    administratorId: input.administratorId ?? null,
+    start: input.range.start.toISOString(),
+    end: input.range.end.toISOString(),
+  });
+  const cached = await getJsonCache<Awaited<ReturnType<typeof loadDashboardSnapshot>>>(cacheKey);
+  if (cached) {
+    return cached;
+  }
+  const snapshot = await loadDashboardSnapshot(queryScope);
+  await setJsonCache(cacheKey, snapshot);
+  return snapshot;
 }

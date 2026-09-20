@@ -17,9 +17,19 @@ import type {
   AddressInput,
   OrganizationRecord,
   SessionRecord,
-  TeamRecord,
   UserRecord,
 } from "../../src/types/auth.js";
+
+type TeamRecord = {
+  id: string;
+  organizationId: string;
+  createdById: string | null;
+  name: string;
+  description: string | null;
+  isActive: boolean;
+  createdAt: Date;
+  updatedAt: Date;
+};
 
 export interface MemoryAddress {
   id: string;
@@ -260,6 +270,8 @@ export function createMemoryRepositories(db: MemoryDb) {
           status: data.status ?? "ACTIVE",
           organizationId: data.organizationId,
           administratorId: null,
+          companyName: null,
+          companyLogoObjectKey: null,
           lastLoginAt: null,
           passwordResetToken: data.passwordResetToken ?? null,
           passwordResetExpires: data.passwordResetExpires ?? null,
@@ -1121,6 +1133,8 @@ export function seedUser(
     status: data.status ?? "ACTIVE",
     organizationId: data.organizationId ?? null,
     administratorId: data.administratorId ?? null,
+    companyName: null,
+    companyLogoObjectKey: null,
     lastLoginAt: null,
     passwordResetToken: null,
     passwordResetExpires: null,
@@ -1678,7 +1692,7 @@ function createMemoryDashboardRepos(db: MemoryDb) {
         if (scope.organizationId && payment.organizationId !== scope.organizationId) {
           return false;
         }
-        return !scope.invoiceAccess || invoiceIds.has(String(payment.invoiceId));
+        return !scope.userIds || invoiceIds.has(String(payment.invoiceId));
       });
       const expenses = db.expenses.filter((expense) => {
         const incurredOn = expense.incurredOn as Date | undefined;
@@ -1816,7 +1830,7 @@ function createMemoryDashboardRepos(db: MemoryDb) {
         teamCount: db.teams.filter(
           (team) => !scope.organizationId || team.organizationId === scope.organizationId,
         ).length,
-        customerCount: scope.invoiceAccess
+        customerCount: scope.userIds
           ? new Set(invoices.map((invoice) => invoice.customerId)).size
           : db.customers.filter(
               (customer) => !scope.organizationId || customer.organizationId === scope.organizationId,
@@ -2080,18 +2094,15 @@ function invoiceMatchesScope(invoice: MemoryInvoice, scope: DashboardQueryScope)
   if (scope.organizationId && invoice.organizationId !== scope.organizationId) {
     return false;
   }
-  if (scope.assignedTeamId && invoice.assignedTeamId !== scope.assignedTeamId) {
-    return false;
-  }
-  if (!scope.invoiceAccess) {
+  if (!scope.userIds) {
     return true;
   }
+  if (scope.userIds.length === 0) {
+    return false;
+  }
   return (
-    invoice.createdById === scope.invoiceAccess.createdById ||
-    invoice.assignedMemberId === scope.invoiceAccess.assignedMemberId ||
-    (invoice.assignedTeamId !== null &&
-      scope.invoiceAccess.assignedTeamIds.includes(invoice.assignedTeamId)) ||
-    Boolean(scope.invoiceAccess.includeUnassigned && invoice.assignedTeamId === null)
+    scope.userIds.includes(invoice.createdById) ||
+    (invoice.assignedMemberId !== null && scope.userIds.includes(invoice.assignedMemberId))
   );
 }
 
@@ -2099,18 +2110,15 @@ function invoiceMatchesReportScope(invoice: MemoryInvoice, scope: ReportQuerySco
   if (scope.organizationId && invoice.organizationId !== scope.organizationId) {
     return false;
   }
-  if (scope.assignedTeamId && invoice.assignedTeamId !== scope.assignedTeamId) {
-    return false;
-  }
-  if (!scope.createdById && !scope.assignedMemberId && !scope.assignedTeamIds) {
+  if (!scope.userIds) {
     return true;
   }
+  if (scope.userIds.length === 0) {
+    return false;
+  }
   return (
-    invoice.createdById === scope.createdById ||
-    invoice.assignedMemberId === scope.assignedMemberId ||
-    (invoice.assignedTeamId !== null &&
-      (scope.assignedTeamIds ?? []).includes(invoice.assignedTeamId)) ||
-    Boolean(scope.includeUnassigned && invoice.assignedTeamId === null)
+    scope.userIds.includes(invoice.createdById) ||
+    (invoice.assignedMemberId !== null && scope.userIds.includes(invoice.assignedMemberId))
   );
 }
 
