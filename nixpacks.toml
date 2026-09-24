@@ -1,7 +1,6 @@
-# Nixpacks Build Plan for Railway - Simplified
+# Nixpacks Build Plan for Railway - Minimal
 # Build: install deps, generate client, compile
-# Deploy: verify migrations (DATABASE_URL available)
-# Start: run server
+# Start: verify migrations, then run server
 
 [phases.setup]
 nixPkgs = ["nodejs_20", "postgresql", "redis"]
@@ -12,12 +11,9 @@ cmds = ["npm ci --include=dev"]
 [phases.build]
 cmds = ["npm run prisma:generate", "npm run build"]
 
-[phases.deploy]
-# DATABASE_URL is available at deploy time
-cmds = ["./node_modules/.bin/prisma migrate status"]
-
 [start]
-cmd = "npm run start"
+# Verify migrations, then start server
+cmd = "./node_modules/.bin/prisma migrate status && npm run start"
 
 [variables]
 NODE_ENV = "production"
