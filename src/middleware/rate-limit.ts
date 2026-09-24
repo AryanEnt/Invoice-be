@@ -6,17 +6,10 @@ import { logger } from "../lib/logger.js";
 import { getRedis } from "../lib/redis.js";
 import { failure } from "../utils/api-response.js";
 
-let redisStore: Store | undefined;
-let redisStoreInitFailed = false;
+let limiterSequence = 0;
 
-function getSharedRateLimitStore(): Store | undefined {
+function createRateLimitStore(prefix?: string): Store | undefined {
   if (env.NODE_ENV === "test" && process.env.FORCE_RATE_LIMIT !== "1") {
-    return undefined;
-  }
-  if (redisStore) {
-    return redisStore;
-  }
-  if (redisStoreInitFailed) {
     return undefined;
   }
   const redis = getRedis();
@@ -24,8 +17,11 @@ function getSharedRateLimitStore(): Store | undefined {
     return undefined;
   }
   try {
-    redisStore = new RedisStore({
-      prefix: "outinvoice:ratelimit:",
+    const storePrefix = prefix
+      ? `outinvoice:rl:${prefix}:`
+      : `outinvoice:rl:${++limiterSequence}:`;
+    return new RedisStore({
+      prefix: storePrefix,
       sendCommand: async (...args: string[]) => {
         if (redis.status === "wait") {
           await redis.connect();
@@ -36,9 +32,7 @@ function getSharedRateLimitStore(): Store | undefined {
         >;
       },
     });
-    return redisStore;
   } catch (error) {
-    redisStoreInitFailed = true;
     logger.warn("Redis rate-limit store unavailable; using in-memory fallback", {
       message: error instanceof Error ? error.message : String(error),
     });
@@ -78,6 +72,7 @@ type CreateLimiterInput = {
   windowMs: number;
   limit: number;
   message: string;
+  prefix?: string;
   /** Defaults to client IP (CF-aware). */
   keyGenerator?: (req: Request) => string;
   skipSuccessfulRequests?: boolean;
@@ -94,10 +89,10 @@ export function createAppRateLimiter(input: CreateLimiterInput): RateLimitReques
     skip: () => !rateLimitsEnabled(),
     keyGenerator: input.keyGenerator ?? ((req) => getClientIp(req)),
     // Custom key generators (CF-Connecting-IP / email composites) are intentional.
-    validate: { keyGeneratorIpFallback: false },
+    validate: { keyGeneratorIpFallback: false, unsharedStore: false },
     skipSuccessfulRequests: input.skipSuccessfulRequests,
     skipFailedRequests: input.skipFailedRequests,
-    store: getSharedRateLimitStore(),
+    store: createRateLimitStore(input.prefix),
     handler: (_req: Request, res: Response) => {
       res.setHeader("Retry-After", String(windowSeconds));
       res
