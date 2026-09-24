@@ -4,15 +4,33 @@ import { z } from "zod";
 loadEnv();
 
 const envSchema = z.object({
-  NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
+  NODE_ENV: z.preprocess((val) => {
+    if (typeof val === "string") {
+      const trimmed = val.trim().toLowerCase().replace(/^["']|["']$/g, "");
+      if (!trimmed || trimmed === "undefined") return undefined;
+      if (trimmed === "prod") return "production";
+      if (trimmed === "dev") return "development";
+      return trimmed;
+    }
+    return val;
+  }, z.enum(["development", "test", "production"]).default("development")),
   PORT: z.coerce.number().int().positive().default(4000),
-  DATABASE_URL: z.string().min(1, "DATABASE_URL is required"),
-  REDIS_URL: z.preprocess(
-    (value) => (value === "" ? undefined : value),
-    z.string().min(1).optional(),
+  DATABASE_URL: z.preprocess(
+    (val) => (typeof val === "string" ? val.trim().replace(/^["']|["']$/g, "") : val),
+    z.string().min(1, "DATABASE_URL is required"),
   ),
+  REDIS_URL: z.preprocess((value) => {
+    if (typeof value === "string") {
+      const trimmed = value.trim().replace(/^["']|["']$/g, "");
+      return trimmed === "" ? undefined : trimmed;
+    }
+    return value;
+  }, z.string().min(1).optional()),
   WORKER_CONCURRENCY: z.coerce.number().int().min(1).max(8).default(2),
-  JWT_SECRET: z.string().min(16, "JWT_SECRET must be at least 16 characters"),
+  JWT_SECRET: z.preprocess(
+    (val) => (typeof val === "string" ? val.trim().replace(/^["']|["']$/g, "") : val),
+    z.string().min(16, "JWT_SECRET must be at least 16 characters"),
+  ),
   CORS_ORIGIN: z.string().min(1).default("http://localhost:3000"),
   SESSION_COOKIE_NAME: z.string().min(1).default("sid"),
   SESSION_DAYS: z.coerce.number().int().positive().default(7),
@@ -80,10 +98,13 @@ const envSchema = z.object({
     (value) => (value === "" ? undefined : value),
     z.string().url().optional(),
   ),
-  PAYMENT_TOKEN_ENCRYPTION_KEY: z.preprocess(
-    (value) => (value === "" ? undefined : value),
-    z.string().min(32).optional(),
-  ),
+  PAYMENT_TOKEN_ENCRYPTION_KEY: z.preprocess((value) => {
+    if (typeof value === "string") {
+      const trimmed = value.trim().replace(/^["']|["']$/g, "");
+      return trimmed === "" ? undefined : trimmed;
+    }
+    return value;
+  }, z.string().min(32).optional()),
   RESEND_API_KEY: z.preprocess(
     (value) => (value === "" ? undefined : value),
     z.string().min(1).optional(),
