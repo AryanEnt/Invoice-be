@@ -12,8 +12,7 @@ cmds = ["npm ci --include=dev"]
 cmds = ["npm run prisma:generate", "npm run build"]
 
 [start]
-# Verify migrations, then start server
-cmd = "./node_modules/.bin/prisma migrate status && npm run start"
+cmd = "npm run start"
 
 [variables]
 NODE_ENV = "production"

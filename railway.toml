@@ -16,6 +16,9 @@ healthcheckTimeout = 100
 restartPolicyType = "on_failure"
 restartPolicyMaxRetries = 3
 
+# Run database migrations before launching the application
+preDeployCommand = "npx prisma migrate deploy"
+
 # Production entry point runs the compiled TypeScript output.
 # The build step (npm run build) must complete successfully first.
 startCommand = "npm run start"

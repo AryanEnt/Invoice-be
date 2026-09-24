@@ -62,10 +62,10 @@ GET http://localhost:4000/api/health
    - `APP_URL` (your frontend URL)
 6. Done - auto-deploys on push to main
 
-### Why No Extra Config
-- `nixpacks.toml`: pinned Node 20, runs build and migrate check on deploy
-- `railway.toml`: health check at `/api/health`, restart on failure
-- `package.json`: `prisma:generate` in postinstall, `build` compiles TypeScript
+### Deployment Architecture
+- `nixpacks.toml`: installs dev dependencies, runs `prisma:generate` and compiles TypeScript (`npm run build`)
+- `railway.toml`: runs database migrations via `preDeployCommand`, health checks `/api/health`, and handles restarts
+- `package.json`: contains scripts and dependencies for API and workers
 
 ---
 
