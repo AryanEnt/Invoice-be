@@ -1,22 +1,33 @@
-# Nixpacks Configuration for Railway
-# Alternative to railway.toml - more granular control
+# Nixpacks Build Plan for Railway
+# Provides fine-grained control over the build lifecycle.
+# This complements railway.toml by defining exact phases and dependencies.
 
 [phases.setup]
-# Node.js version (Railway defaults to latest LTS)
+# Pin Node.js 20 LTS for consistency across environments.
+# Include postgresql and redis clients for prisma migrate and health checks.
 nixPkgs = ["nodejs_20", "postgresql", "redis"]
 
 [phases.install]
+# npm ci ensures reproducible installs from package-lock.json.
+# Faster and stricter than npm install for CI/CD pipelines.
 cmds = ["npm ci"]
 
 [phases.build]
+# Compile TypeScript to JavaScript for production runtime.
+# This step catches type errors before deployment.
 cmds = ["npm run build"]
 
 [phases.deploy]
+# Verify migration status before accepting traffic.
+# Fails fast if database schema is out of sync.
 cmds = ["npm run prisma:migrate:status"]
 
 [start]
+# Run the compiled application from dist/server.js.
+# The start script handles graceful shutdown and resource cleanup.
 cmd = "npm run start"
 
 [variables]
-# These will be overridden by Railway environment variables
+# Default to production; Railway overrides this automatically.
+# Explicit default prevents accidental development config in prod.
 NODE_ENV = "production"

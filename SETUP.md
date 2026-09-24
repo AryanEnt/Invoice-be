@@ -14,11 +14,11 @@ docker compose up -d
 ### Option 2: Cloud Databases (No Local Install)
 | Service | PostgreSQL | Redis |
 |---------|-----------|-------|
-| **Neon** | ✅ Serverless, free tier | - |
-| **Supabase** | ✅ Free tier | - |
-| **Railway** | ✅ Plugin | ✅ Plugin |
-| **Upstash** | - | ✅ Serverless, free tier |
-| **Redis Cloud** | - | ✅ Free tier |
+| **Neon** | Serverless, free tier | - |
+| **Supabase** | Free tier | - |
+| **Railway** | Plugin | Plugin |
+| **Upstash** | - | Serverless, free tier |
+| **Redis Cloud** | - | Free tier |
 
 ### Option 3: Local Installation
 - PostgreSQL: https://www.postgresql.org/download/
@@ -86,7 +86,7 @@ npm run start      # Run production build
 
 ---
 
-# 🚂 Railway Deployment (Recommended)
+# Railway Deployment (Recommended)
 
 Railway is the **simplest path** - managed PostgreSQL + Redis, auto-deploys from GitHub.
 
@@ -104,14 +104,14 @@ git push origin main
 ```
 
 ### Step 2: Create Railway Project
-1. Go to https://railway.app → **New Project**
-2. **Deploy from GitHub repo** → Select your repo
+1. Go to https://railway.app -> **New Project**
+2. **Deploy from GitHub repo** -> Select your repo
 3. Railway auto-detects Node.js and builds
 
 ### Step 3: Add Database Plugins
 In Railway Dashboard:
-1. **New Service** → **Database** → **PostgreSQL**
-2. **New Service** → **Database** → **Redis**
+1. **New Service** -> **Database** -> **PostgreSQL**
+2. **New Service** -> **Database** -> **Redis**
 
 Railway automatically injects:
 - `DATABASE_URL` (PostgreSQL)
@@ -121,21 +121,21 @@ Railway automatically injects:
 ### Step 4: Set Environment Variables
 In **Railway Dashboard > Variables**, add:
 
-| Variable | Required | Notes |
-|----------|----------|-------|
-| `JWT_SECRET` | ✅ | `openssl rand -base64 32` |
-| `PAYMENT_TOKEN_ENCRYPTION_KEY` | ✅ (prod) | `openssl rand -base64 32` |
-| `NODE_ENV` | ✅ | `production` |
-| `CORS_ORIGIN` | ✅ | Your frontend URL (e.g., `https://app.yourdomain.com`) |
-| `API_URL` | ✅ | Your Railway URL (e.g., `https://your-app.up.railway.app`) |
-| `APP_URL` | ✅ | Your frontend URL |
-| `BOOTSTRAP_SUPER_ADMIN_EMAIL` | Optional | For initial admin user |
-| `BOOTSTRAP_SUPER_ADMIN_PASSWORD` | Optional | For initial admin user |
-| `STRIPE_*` | Optional | If using Stripe |
-| `PAYPAL_*` | Optional | If using PayPal |
-| `RESEND_API_KEY` | Optional | If using email |
-| `EMAIL_FROM` | Optional | If using email |
-| `R2_*` | Optional | If using file storage |
+| Variable | Required | Why |
+|----------|----------|-----|
+| `JWT_SECRET` | Yes | Signs tokens; rotation invalidates all sessions |
+| `PAYMENT_TOKEN_ENCRYPTION_KEY` | Yes (prod) | Encrypts stored payment refs; loss = unrecoverable data |
+| `NODE_ENV` | Yes | Enables production optimizations and security headers |
+| `CORS_ORIGIN` | Yes | Restricts credentialed requests to your frontend only |
+| `API_URL` | Yes | Generates correct webhook/email/redirect URLs |
+| `APP_URL` | Yes | Frontend URL for email links and OAuth callbacks |
+| `BOOTSTRAP_SUPER_ADMIN_EMAIL` | Optional | Creates initial admin on first deploy |
+| `BOOTSTRAP_SUPER_ADMIN_PASSWORD` | Optional | Creates initial admin on first deploy |
+| `STRIPE_*` | Optional | Payment processing via Stripe |
+| `PAYPAL_*` | Optional | Payment processing via PayPal |
+| `RESEND_API_KEY` | Optional | Transactional email delivery |
+| `EMAIL_FROM` | Optional | Verified sender domain for email |
+| `R2_*` | Optional | Logo/PDF storage in Cloudflare R2 |
 
 ### Step 5: Deploy
 - Railway auto-deploys on `git push`
@@ -143,22 +143,22 @@ In **Railway Dashboard > Variables**, add:
 - View logs: **Deployments > [latest] > Logs**
 
 ### Step 6: Custom Domain (Optional)
-**Settings > Domains > Custom Domain** → Add your domain
+**Settings > Domains > Custom Domain** -> Add your domain
 
 ---
 
 ## Railway Architecture
 
 ```
-┌─────────────────────────────────────────────────────────────┐
-│                        RAILWAY PROJECT                       │
-├─────────────────┬─────────────────┬─────────────────────────┤
-│   Web Service   │  PostgreSQL     │  Redis                  │
-│  (your app)     │  (plugin)       │  (plugin)               │
-│                 │                 │                         │
-│  PORT=auto      │  DATABASE_URL   │  REDIS_URL              │
-│  NODE_ENV=prod  │  (auto-injected)│  (auto-injected)        │
-└─────────────────┴─────────────────┴─────────────────────────┘
++-------------------------------------------------------------+
+|                      RAILWAY PROJECT                         |
++-----------------+-----------------+--------------------------+
+|   Web Service   |  PostgreSQL     |  Redis                   |
+|  (your app)     |  (plugin)       |  (plugin)                |
+|                 |                 |                          |
+|  PORT=auto      |  DATABASE_URL   |  REDIS_URL               |
+|  NODE_ENV=prod  |  (auto-injected)|  (auto-injected)         |
++-----------------+-----------------+--------------------------+
 ```
 
 ---
@@ -218,7 +218,7 @@ railway login
 ### Build Fails
 ```bash
 # Check build logs in Railway Dashboard
-# Common: TypeScript errors → run `npm run typecheck` locally first
+# Common: TypeScript errors -> run `npm run typecheck` locally first
 ```
 
 ### Database Connection Error
@@ -256,10 +256,10 @@ git checkout -b feature/your-feature
 git add .
 git commit -m "feat: description"
 
-# Push → Auto-deploys to Railway (if connected to main)
+# Push -> Auto-deploys to Railway (if connected to main)
 git push origin feature/your-feature
 
-# Merge to main via PR → Production deploy
+# Merge to main via PR -> Production deploy
 ```
 
 ---

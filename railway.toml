@@ -1,19 +1,25 @@
 # Railway Deployment Configuration
-# This file tells Railway how to build and run your application
+# Defines how Railway builds, deploys, and monitors this service.
+# Using Nixpacks ensures reproducible builds with pinned Node.js version.
 
 [build]
-# Use Nixpacks builder (default for Node.js)
+# Nixpacks provides deterministic builds and automatic dependency caching.
+# This is more reliable than Dockerfiles for Node.js projects.
 builder = "nixpacks"
 
 [deploy]
-# Health check endpoint (matches /api/health route)
+# Health checks prevent traffic from routing to unhealthy instances.
+# The /api/health endpoint validates database and Redis connectivity.
 healthcheckPath = "/api/health"
 healthcheckTimeout = 100
+# Automatic restart on failure improves availability without manual intervention.
 restartPolicyType = "on_failure"
 restartPolicyMaxRetries = 3
 
-# Start command - Railway will run this after build
+# Production entry point runs the compiled TypeScript output.
+# The build step (npm run build) must complete successfully first.
 startCommand = "npm run start"
 
-# Optional: Custom build command (default: npm run build)
+# Build command defaults to npm run build via Nixpacks detection.
+# Override only if you need custom build steps.
 # buildCommand = "npm run build"
