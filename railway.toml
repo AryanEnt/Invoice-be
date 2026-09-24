@@ -1,0 +1,19 @@
+# Railway Deployment Configuration
+# This file tells Railway how to build and run your application
+
+[build]
+# Use Nixpacks builder (default for Node.js)
+builder = "nixpacks"
+
+[deploy]
+# Health check endpoint (matches /api/health route)
+healthcheckPath = "/api/health"
+healthcheckTimeout = 100
+restartPolicyType = "on_failure"
+restartPolicyMaxRetries = 3
+
+# Start command - Railway will run this after build
+startCommand = "npm run start"
+
+# Optional: Custom build command (default: npm run build)
+# buildCommand = "npm run build"

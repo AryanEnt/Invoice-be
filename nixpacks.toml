@@ -1,0 +1,22 @@
+# Nixpacks Configuration for Railway
+# Alternative to railway.toml - more granular control
+
+[phases.setup]
+# Node.js version (Railway defaults to latest LTS)
+nixPkgs = ["nodejs_20", "postgresql", "redis"]
+
+[phases.install]
+cmds = ["npm ci"]
+
+[phases.build]
+cmds = ["npm run build"]
+
+[phases.deploy]
+cmds = ["npm run prisma:migrate:status"]
+
+[start]
+cmd = "npm run start"
+
+[variables]
+# These will be overridden by Railway environment variables
+NODE_ENV = "production"

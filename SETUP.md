@@ -1,168 +1,272 @@
-# Development Setup Guide
+# Development & Deployment Setup Guide
 
-## Prerequisites
+## Quick Start (Local Development)
 
-You need **PostgreSQL** and **Redis** running. Choose one of these options:
+### Prerequisites
+- **Node.js 20+** (LTS)
+- **PostgreSQL 16+** and **Redis 7+** (see options below)
 
-### Option 1: Docker (Recommended)
+### Option 1: Docker (Easiest Local)
 ```bash
-# Install Docker Desktop from https://www.docker.com/products/docker-desktop/
-# Then run:
 docker compose up -d
 ```
 
-### Option 2: Local Installation
-- **PostgreSQL 16+**: https://www.postgresql.org/download/
-- **Redis 7+**: https://redis.io/download/
+### Option 2: Cloud Databases (No Local Install)
+| Service | PostgreSQL | Redis |
+|---------|-----------|-------|
+| **Neon** | ✅ Serverless, free tier | - |
+| **Supabase** | ✅ Free tier | - |
+| **Railway** | ✅ Plugin | ✅ Plugin |
+| **Upstash** | - | ✅ Serverless, free tier |
+| **Redis Cloud** | - | ✅ Free tier |
 
-### Option 3: Cloud Services (No local install)
-- **PostgreSQL**: Neon (https://neon.tech), Supabase (https://supabase.com), or Railway (https://railway.app)
-- **Redis**: Upstash (https://upstash.com) or Redis Cloud (https://redis.com/cloud/)
+### Option 3: Local Installation
+- PostgreSQL: https://www.postgresql.org/download/
+- Redis: https://redis.io/download/
 
 ---
 
 ## 1. Environment Configuration
 
-Copy the example file and fill in your values:
-
 ```bash
 cp .env.example .env
 ```
 
-**Required variables:**
-| Variable | Description |
-|----------|-------------|
-| `DATABASE_URL` | PostgreSQL connection string (e.g., `postgresql://user:pass@localhost:5432/invoice_be`) |
-| `JWT_SECRET` | Random string ≥16 chars (generate with `openssl rand -base64 32`) |
-| `REDIS_URL` | Redis connection (e.g., `redis://localhost:6379`) - optional for dev |
+**Required for local dev:**
+| Variable | Local Value Example |
+|----------|---------------------|
+| `DATABASE_URL` | `postgresql://postgres:postgres@localhost:5432/invoice_be?schema=public` |
+| `JWT_SECRET` | Generate: `openssl rand -base64 32` |
+| `REDIS_URL` | `redis://localhost:6379` |
 
-**Optional but recommended for full features:**
-- `STRIPE_SECRET_KEY` - Get from https://dashboard.stripe.com/apikeys
-- `PAYPAL_CLIENT_ID` / `PAYPAL_CLIENT_SECRET` - Get from https://developer.paypal.com/
-- `RESEND_API_KEY` - Get from https://resend.com/api-keys
-- `R2_*` - Cloudflare R2 credentials for file storage
+**Optional (for full features):**
+- Stripe, PayPal, Resend, R2 credentials
 
 ---
 
 ## 2. Database Setup
 
 ```bash
+# Generate Prisma Client
+npm run prisma:generate
+
 # Run migrations
 npm run prisma:migrate
 
-# (Optional) Seed database with demo data
+# Seed demo data (optional)
 npm run prisma:seed
-# or for SIA demo data:
+# or
 npm run seed:sia-demo
 ```
 
 ---
 
-## 3. Run Development Server
+## 3. Run Development
 
 ```bash
-# Terminal 1: API server
+# Terminal 1: API Server (http://localhost:4000)
 npm run dev
 
-# Terminal 2: Background worker (for email jobs, etc.)
+# Terminal 2: Background Worker (emails, jobs)
 npm run dev:worker
 ```
 
-Server runs at `http://localhost:4000`
-
 ---
 
-## 4. Run Tests
+## 4. Testing & Quality
 
 ```bash
-# Run all tests
-npm test
-
-# Watch mode
-npm run test:watch
+npm test           # Run tests
+npm run test:watch # Watch mode
+npm run typecheck  # TypeScript check
+npm run lint       # ESLint
+npm run build      # Production build
+npm run start      # Run production build
 ```
 
 ---
 
-## 5. Useful Commands
+# 🚂 Railway Deployment (Recommended)
 
-| Command | Description |
-|---------|-------------|
-| `npm run prisma:studio` | Open Prisma Studio (database GUI) |
-| `npm run prisma:migrate:status` | Check migration status |
-| `npm run typecheck` | TypeScript type checking |
-| `npm run lint` | ESLint |
-| `npm run build` | Production build |
-| `npm run start` | Run production build |
+Railway is the **simplest path** - managed PostgreSQL + Redis, auto-deploys from GitHub.
+
+## One-Click Deploy
+
+[![Deploy on Railway](https://railway.app/button.svg)](https://railway.app/template/your-template-id)
+
+Or manually:
+
+### Step 1: Push to GitHub
+```bash
+git add .
+git commit -m "feat: railway deployment ready"
+git push origin main
+```
+
+### Step 2: Create Railway Project
+1. Go to https://railway.app → **New Project**
+2. **Deploy from GitHub repo** → Select your repo
+3. Railway auto-detects Node.js and builds
+
+### Step 3: Add Database Plugins
+In Railway Dashboard:
+1. **New Service** → **Database** → **PostgreSQL**
+2. **New Service** → **Database** → **Redis**
+
+Railway automatically injects:
+- `DATABASE_URL` (PostgreSQL)
+- `REDIS_URL` (Redis)
+- `PORT` (auto-assigned)
+
+### Step 4: Set Environment Variables
+In **Railway Dashboard > Variables**, add:
+
+| Variable | Required | Notes |
+|----------|----------|-------|
+| `JWT_SECRET` | ✅ | `openssl rand -base64 32` |
+| `PAYMENT_TOKEN_ENCRYPTION_KEY` | ✅ (prod) | `openssl rand -base64 32` |
+| `NODE_ENV` | ✅ | `production` |
+| `CORS_ORIGIN` | ✅ | Your frontend URL (e.g., `https://app.yourdomain.com`) |
+| `API_URL` | ✅ | Your Railway URL (e.g., `https://your-app.up.railway.app`) |
+| `APP_URL` | ✅ | Your frontend URL |
+| `BOOTSTRAP_SUPER_ADMIN_EMAIL` | Optional | For initial admin user |
+| `BOOTSTRAP_SUPER_ADMIN_PASSWORD` | Optional | For initial admin user |
+| `STRIPE_*` | Optional | If using Stripe |
+| `PAYPAL_*` | Optional | If using PayPal |
+| `RESEND_API_KEY` | Optional | If using email |
+| `EMAIL_FROM` | Optional | If using email |
+| `R2_*` | Optional | If using file storage |
+
+### Step 5: Deploy
+- Railway auto-deploys on `git push`
+- First deploy runs `prisma:migrate` automatically (via nixpacks.toml)
+- View logs: **Deployments > [latest] > Logs**
+
+### Step 6: Custom Domain (Optional)
+**Settings > Domains > Custom Domain** → Add your domain
 
 ---
 
-## Database Connection Strings Examples
+## Railway Architecture
 
-**Local PostgreSQL (Docker):**
 ```
-DATABASE_URL=postgresql://postgres:postgres@localhost:5432/invoice_be?schema=public
-```
-
-**Neon (Serverless):**
-```
-DATABASE_URL=postgresql://user:pass@ep-xxx.us-east-1.aws.neon.tech/invoice_be?sslmode=require
-```
-
-**Supabase:**
-```
-DATABASE_URL=postgresql://postgres:pass@db.xxx.supabase.co:5432/postgres?sslmode=require
+┌─────────────────────────────────────────────────────────────┐
+│                        RAILWAY PROJECT                       │
+├─────────────────┬─────────────────┬─────────────────────────┤
+│   Web Service   │  PostgreSQL     │  Redis                  │
+│  (your app)     │  (plugin)       │  (plugin)               │
+│                 │                 │                         │
+│  PORT=auto      │  DATABASE_URL   │  REDIS_URL              │
+│  NODE_ENV=prod  │  (auto-injected)│  (auto-injected)        │
+└─────────────────┴─────────────────┴─────────────────────────┘
 ```
 
-**Local Redis (Docker):**
-```
-REDIS_URL=redis://localhost:6379
+---
+
+## Railway Configuration Files
+
+| File | Purpose |
+|------|---------|
+| `railway.toml` | Health check, restart policy, start command |
+| `nixpacks.toml` | Build phases, Node version, migrate on deploy |
+| `.env.example` | Template for required variables |
+
+---
+
+## Railway-Specific Commands
+
+```bash
+# View logs
+railway logs
+
+# Run one-off command (migrate, seed, shell)
+railway run npm run prisma:migrate:status
+railway run npm run prisma:seed
+railway run bash
+
+# Open Railway dashboard
+railway open
+
+# Link existing project
+railway link
 ```
 
-**Upstash Redis:**
+Install Railway CLI:
+```bash
+npm i -g @railway/cli
+railway login
 ```
-REDIS_URL=rediss://:token@xxx.upstash.io:6379
-```
+
+---
+
+## Production Checklist
+
+- [ ] `NODE_ENV=production`
+- [ ] `JWT_SECRET` set (32+ chars)
+- [ ] `PAYMENT_TOKEN_ENCRYPTION_KEY` set (32+ chars)
+- [ ] `CORS_ORIGIN` = your frontend domain
+- [ ] `API_URL` = your Railway backend domain
+- [ ] `APP_URL` = your frontend domain
+- [ ] Stripe/PayPal webhook URLs updated to Railway domain
+- [ ] Custom domain configured (optional)
+- [ ] Health check `/health` responding
 
 ---
 
 ## Troubleshooting
 
-### "DATABASE_URL is required"
-Make sure `.env` exists and has a valid `DATABASE_URL`.
-
-### Prisma migration fails
+### Build Fails
 ```bash
-# Reset database (DESTROYS DATA)
-npm run prisma:migrate:baseline
-# or
-npx prisma migrate reset
+# Check build logs in Railway Dashboard
+# Common: TypeScript errors → run `npm run typecheck` locally first
 ```
 
-### Port 4000 already in use
-Change `PORT` in `.env` or kill the process:
+### Database Connection Error
+- Verify `DATABASE_URL` is set (auto-injected by PostgreSQL plugin)
+- Check PostgreSQL service is "Running" in Railway
+
+### Redis Connection Error
+- Verify `REDIS_URL` is set (auto-injected by Redis plugin)
+- Check Redis service is "Running" in Railway
+
+### Migration Fails on Deploy
 ```bash
-npx kill-port 4000
+# Run manually via Railway CLI
+railway run npm run prisma:migrate:status
+railway run npm run prisma:migrate
 ```
 
-### JWT_SECRET error
-Generate a secure secret:
+### Port Issues
+- Railway sets `PORT` automatically - don't hardcode
+- App must listen on `0.0.0.0:$PORT` (already configured in server.ts)
+
+### Health Check Fails
+- Ensure `/health` endpoint exists (in app.ts)
+- Check `railway.toml` healthcheckPath matches
+
+---
+
+## Git Workflow
+
 ```bash
-node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"
+# Feature branch
+git checkout -b feature/your-feature
+
+# Commit changes
+git add .
+git commit -m "feat: description"
+
+# Push → Auto-deploys to Railway (if connected to main)
+git push origin feature/your-feature
+
+# Merge to main via PR → Production deploy
 ```
 
 ---
 
-## Git Workflow for New Features
+## Useful Links
 
-```bash
-# Create feature branch
-git checkout -b feature/your-feature-name
-
-# Make changes, commit
-git add .
-git commit -m "feat: your feature description"
-
-# Push and create PR
-git push origin feature/your-feature-name
-```
+- Railway Docs: https://docs.railway.app/
+- Railway CLI: https://docs.railway.app/develop/cli
+- Node.js on Railway: https://docs.railway.app/guides/nodejs
+- Database plugins: https://docs.railway.app/databases/overview
