@@ -86,163 +86,90 @@ npm run start      # Run production build
 
 ---
 
-# Railway Deployment (Recommended)
+# Railway Deployment (Least Friction Path)
 
-Railway is the **simplest path** - managed PostgreSQL + Redis, auto-deploys from GitHub.
+## Minimal Steps
 
-## One-Click Deploy
+1. **Push to GitHub**
+   ```bash
+   git push origin main
+   ```
 
-[![Deploy on Railway](https://railway.app/button.svg)](https://railway.app/template/your-template-id)
+2. **Create Railway Project**
+   - Go to https://railway.app -> New Project -> Deploy from GitHub repo
+   - Select your repo
+   - Railway auto-detects Node.js, runs `npm ci` -> `npm run build` -> `npm run start`
 
-Or manually:
+3. **Add Database Plugins** (in Railway Dashboard)
+   - New Service -> Database -> PostgreSQL (auto-injects `DATABASE_URL`)
+   - New Service -> Database -> Redis (auto-injects `REDIS_URL`)
 
-### Step 1: Push to GitHub
-```bash
-git add .
-git commit -m "feat: railway deployment ready"
-git push origin main
-```
+4. **Set 6 Required Variables** (in Railway Dashboard > Variables)
+   | Variable | Value |
+   |----------|-------|
+   | `JWT_SECRET` | `openssl rand -base64 32` |
+   | `PAYMENT_TOKEN_ENCRYPTION_KEY` | `openssl rand -base64 32` |
+   | `NODE_ENV` | `production` |
+   | `CORS_ORIGIN` | Your frontend URL (e.g., `https://app.yourdomain.com`) |
+   | `API_URL` | Your Railway URL (e.g., `https://your-app.up.railway.app`) |
+   | `APP_URL` | Your frontend URL |
 
-### Step 2: Create Railway Project
-1. Go to https://railway.app -> **New Project**
-2. **Deploy from GitHub repo** -> Select your repo
-3. Railway auto-detects Node.js and builds
-
-### Step 3: Add Database Plugins
-In Railway Dashboard:
-1. **New Service** -> **Database** -> **PostgreSQL**
-2. **New Service** -> **Database** -> **Redis**
-
-Railway automatically injects:
-- `DATABASE_URL` (PostgreSQL)
-- `REDIS_URL` (Redis)
-- `PORT` (auto-assigned)
-
-### Step 4: Set Environment Variables
-In **Railway Dashboard > Variables**, add:
-
-| Variable | Required | Why |
-|----------|----------|-----|
-| `JWT_SECRET` | Yes | Signs tokens; rotation invalidates all sessions |
-| `PAYMENT_TOKEN_ENCRYPTION_KEY` | Yes (prod) | Encrypts stored payment refs; loss = unrecoverable data |
-| `NODE_ENV` | Yes | Enables production optimizations and security headers |
-| `CORS_ORIGIN` | Yes | Restricts credentialed requests to your frontend only |
-| `API_URL` | Yes | Generates correct webhook/email/redirect URLs |
-| `APP_URL` | Yes | Frontend URL for email links and OAuth callbacks |
-| `BOOTSTRAP_SUPER_ADMIN_EMAIL` | Optional | Creates initial admin on first deploy |
-| `BOOTSTRAP_SUPER_ADMIN_PASSWORD` | Optional | Creates initial admin on first deploy |
-| `STRIPE_*` | Optional | Payment processing via Stripe |
-| `PAYPAL_*` | Optional | Payment processing via PayPal |
-| `RESEND_API_KEY` | Optional | Transactional email delivery |
-| `EMAIL_FROM` | Optional | Verified sender domain for email |
-| `R2_*` | Optional | Logo/PDF storage in Cloudflare R2 |
-
-### Step 5: Deploy
-- Railway auto-deploys on `git push`
-- First deploy runs `prisma:migrate` automatically (via nixpacks.toml)
-- View logs: **Deployments > [latest] > Logs**
-
-### Step 6: Custom Domain (Optional)
-**Settings > Domains > Custom Domain** -> Add your domain
+5. **Done** - Auto-deploys on every push to main
 
 ---
 
-## Railway Architecture
+## Why This Works Without Extra Config
 
-```
-+-------------------------------------------------------------+
-|                      RAILWAY PROJECT                         |
-+-----------------+-----------------+--------------------------+
-|   Web Service   |  PostgreSQL     |  Redis                   |
-|  (your app)     |  (plugin)       |  (plugin)                |
-|                 |                 |                          |
-|  PORT=auto      |  DATABASE_URL   |  REDIS_URL               |
-|  NODE_ENV=prod  |  (auto-injected)|  (auto-injected)         |
-+-----------------+-----------------+--------------------------+
-```
-
----
-
-## Railway Configuration Files
-
-| File | Purpose |
+| File | Handles |
 |------|---------|
-| `railway.toml` | Health check, restart policy, start command |
-| `nixpacks.toml` | Build phases, Node version, migrate on deploy |
-| `.env.example` | Template for required variables |
+| `nixpacks.toml` | Pinned Node 20, `npm ci`, `npm run build`, runs `prisma:migrate:status` on deploy |
+| `railway.toml` | Health check at `/api/health`, restart on failure, `npm run start` |
+| `package.json` | `prisma:generate` runs in `postinstall`, `build` compiles TypeScript |
+
+No Dockerfile, no custom scripts, no Railway CLI needed.
 
 ---
 
-## Railway-Specific Commands
+## Optional Variables (Add Only If Using Feature)
 
-```bash
-# View logs
-railway logs
-
-# Run one-off command (migrate, seed, shell)
-railway run npm run prisma:migrate:status
-railway run npm run prisma:seed
-railway run bash
-
-# Open Railway dashboard
-railway open
-
-# Link existing project
-railway link
-```
-
-Install Railway CLI:
-```bash
-npm i -g @railway/cli
-railway login
-```
+| Feature | Variables |
+|---------|-----------|
+| Super admin bootstrap | `BOOTSTRAP_SUPER_ADMIN_EMAIL`, `BOOTSTRAP_SUPER_ADMIN_PASSWORD` |
+| Stripe payments | `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `STRIPE_REDIRECT_URI` |
+| PayPal payments | `PAYPAL_CLIENT_ID`, `PAYPAL_CLIENT_SECRET`, `PAYPAL_WEBHOOK_ID`, `PAYPAL_REDIRECT_URI` |
+| Email (Resend) | `RESEND_API_KEY`, `EMAIL_FROM`, `EMAIL_FROM_NAME`, `EMAIL_REPLY_TO` |
+| File storage (R2) | `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_BUCKET_NAME`, `R2_ENDPOINT` |
 
 ---
 
-## Production Checklist
-
-- [ ] `NODE_ENV=production`
-- [ ] `JWT_SECRET` set (32+ chars)
-- [ ] `PAYMENT_TOKEN_ENCRYPTION_KEY` set (32+ chars)
-- [ ] `CORS_ORIGIN` = your frontend domain
-- [ ] `API_URL` = your Railway backend domain
-- [ ] `APP_URL` = your frontend domain
-- [ ] Stripe/PayPal webhook URLs updated to Railway domain
-- [ ] Custom domain configured (optional)
-- [ ] Health check `/health` responding
+## Custom Domain (Optional)
+Settings > Domains > Custom Domain -> Add your domain
 
 ---
 
 ## Troubleshooting
 
 ### Build Fails
-```bash
-# Check build logs in Railway Dashboard
-# Common: TypeScript errors -> run `npm run typecheck` locally first
-```
+- Check build logs in Railway Dashboard
+- Common: TypeScript errors -> run `npm run typecheck` locally first
 
 ### Database Connection Error
-- Verify `DATABASE_URL` is set (auto-injected by PostgreSQL plugin)
-- Check PostgreSQL service is "Running" in Railway
+- Verify PostgreSQL plugin shows "Running"
+- `DATABASE_URL` is auto-injected
 
 ### Redis Connection Error
-- Verify `REDIS_URL` is set (auto-injected by Redis plugin)
-- Check Redis service is "Running" in Railway
+- Verify Redis plugin shows "Running"
+- `REDIS_URL` is auto-injected
 
 ### Migration Fails on Deploy
 ```bash
-# Run manually via Railway CLI
 railway run npm run prisma:migrate:status
 railway run npm run prisma:migrate
 ```
 
-### Port Issues
-- Railway sets `PORT` automatically - don't hardcode
-- App must listen on `0.0.0.0:$PORT` (already configured in server.ts)
-
 ### Health Check Fails
-- Ensure `/health` endpoint exists (in app.ts)
-- Check `railway.toml` healthcheckPath matches
+- Verify `/api/health` endpoint responds (returns 200 with db/redis status)
+- Check `railway.toml` healthcheckPath = `/api/health`
 
 ---
 
