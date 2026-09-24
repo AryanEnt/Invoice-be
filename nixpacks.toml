@@ -20,8 +20,8 @@ cmds = ["npm run build"]
 [phases.deploy]
 # Verify migration status before accepting traffic.
 # Fails fast if database schema is out of sync.
-# Use npx to ensure prisma CLI from node_modules/.bin is found.
-cmds = ["npx prisma migrate status"]
+# Use local prisma binary (from npm ci) to avoid Prisma 7 breaking changes.
+cmds = ["./node_modules/.bin/prisma migrate status"]
 
 [start]
 # Run the compiled application from dist/server.js.
