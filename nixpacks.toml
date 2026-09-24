@@ -9,13 +9,13 @@ nixPkgs = ["nodejs_20", "postgresql", "redis"]
 
 [phases.install]
 # npm ci ensures reproducible installs from package-lock.json.
-# Faster and stricter than npm install for CI/CD pipelines.
-cmds = ["npm ci"]
+# Include devDependencies for Prisma CLI and TypeScript compilation.
+cmds = ["npm ci --include=dev"]
 
 [phases.build]
 # Compile TypeScript to JavaScript for production runtime.
-# This step catches type errors before deployment.
-cmds = ["npm run build"]
+# Generate Prisma Client first (makes prisma binary available).
+cmds = ["npm run prisma:generate", "npm run build"]
 
 [phases.deploy]
 # Verify migration status before accepting traffic.
