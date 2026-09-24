@@ -1,68 +1,33 @@
 # Development & Deployment Setup Guide
 
-## Quick Start (Local Development)
+## Local Development
 
 ### Prerequisites
 - **Node.js 20+** (LTS)
-- **PostgreSQL 16+** and **Redis 7+** (see options below)
 
-### Option 1: Docker (Easiest Local)
+### Start Databases (Docker)
 ```bash
 docker compose up -d
 ```
+This starts PostgreSQL on port 5432 and Redis on port 6379.
 
-### Option 2: Cloud Databases (No Local Install)
-| Service | PostgreSQL | Redis |
-|---------|-----------|-------|
-| **Neon** | Serverless, free tier | - |
-| **Supabase** | Free tier | - |
-| **Railway** | Plugin | Plugin |
-| **Upstash** | - | Serverless, free tier |
-| **Redis Cloud** | - | Free tier |
-
-### Option 3: Local Installation
-- PostgreSQL: https://www.postgresql.org/download/
-- Redis: https://redis.io/download/
-
----
-
-## 1. Environment Configuration
-
+### Configure Environment
 ```bash
 cp .env.example .env
 ```
+Edit `.env` with:
+- `DATABASE_URL=postgresql://postgres:postgres@localhost:5432/invoice_be?schema=public`
+- `JWT_SECRET=` (generate: `openssl rand -base64 32`)
+- `REDIS_URL=redis://localhost:6379`
 
-**Required for local dev:**
-| Variable | Local Value Example |
-|----------|---------------------|
-| `DATABASE_URL` | `postgresql://postgres:postgres@localhost:5432/invoice_be?schema=public` |
-| `JWT_SECRET` | Generate: `openssl rand -base64 32` |
-| `REDIS_URL` | `redis://localhost:6379` |
-
-**Optional (for full features):**
-- Stripe, PayPal, Resend, R2 credentials
-
----
-
-## 2. Database Setup
-
+### Setup Database
 ```bash
-# Generate Prisma Client
 npm run prisma:generate
-
-# Run migrations
 npm run prisma:migrate
-
-# Seed demo data (optional)
 npm run prisma:seed
-# or
-npm run seed:sia-demo
 ```
 
----
-
-## 3. Run Development
-
+### Run Development
 ```bash
 # Terminal 1: API Server (http://localhost:4000)
 npm run dev
@@ -71,13 +36,9 @@ npm run dev
 npm run dev:worker
 ```
 
----
-
-## 4. Testing & Quality
-
+### Testing & Quality
 ```bash
 npm test           # Run tests
-npm run test:watch # Watch mode
 npm run typecheck  # TypeScript check
 npm run lint       # ESLint
 npm run build      # Production build
@@ -86,9 +47,9 @@ npm run start      # Run production build
 
 ---
 
-# Railway Deployment (Least Friction Path)
+## Railway Deployment (Recommended)
 
-## Minimal Steps
+### Minimal Steps
 
 1. **Push to GitHub**
    ```bash
@@ -116,9 +77,7 @@ npm run start      # Run production build
 
 5. **Done** - Auto-deploys on every push to main
 
----
-
-## Why This Works Without Extra Config
+### Why This Works Without Extra Config
 
 | File | Handles |
 |------|---------|
@@ -128,9 +87,7 @@ npm run start      # Run production build
 
 No Dockerfile, no custom scripts, no Railway CLI needed.
 
----
-
-## Optional Variables (Add Only If Using Feature)
+### Optional Variables (Add Only If Using Feature)
 
 | Feature | Variables |
 |---------|-----------|
@@ -140,9 +97,7 @@ No Dockerfile, no custom scripts, no Railway CLI needed.
 | Email (Resend) | `RESEND_API_KEY`, `EMAIL_FROM`, `EMAIL_FROM_NAME`, `EMAIL_REPLY_TO` |
 | File storage (R2) | `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_BUCKET_NAME`, `R2_ENDPOINT` |
 
----
-
-## Custom Domain (Optional)
+### Custom Domain (Optional)
 Settings > Domains > Custom Domain -> Add your domain
 
 ---
@@ -188,12 +143,3 @@ git push origin feature/your-feature
 
 # Merge to main via PR -> Production deploy
 ```
-
----
-
-## Useful Links
-
-- Railway Docs: https://docs.railway.app/
-- Railway CLI: https://docs.railway.app/develop/cli
-- Node.js on Railway: https://docs.railway.app/guides/nodejs
-- Database plugins: https://docs.railway.app/databases/overview
