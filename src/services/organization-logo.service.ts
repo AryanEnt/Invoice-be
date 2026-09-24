@@ -13,13 +13,30 @@ import {
   uploadObject,
 } from "../integrations/storage/r2.service.js";
 import {
+  createOrganization,
   findOrganizationById,
+  findOrganizationBySlug,
   getDefaultOrganizationId,
   updateOrganization,
 } from "../repositories/organization.repository.js";
 import type { AuthUser } from "../types/auth.js";
 import { assertOrganizationAccess } from "../utils/organization-scope.js";
 import { recordAudit } from "./audit.service.js";
+import { slugify } from "../utils/slug.js";
+
+async function uniqueSlug(base: string): Promise<string> {
+  const root = slugify(base);
+  let candidate = root;
+  let suffix = 2;
+
+  while (await findOrganizationBySlug(candidate)) {
+    const extra = `-${suffix}`;
+    candidate = `${root.slice(0, Math.max(1, 60 - extra.length))}${extra}`;
+    suffix += 1;
+  }
+
+  return candidate;
+}
 
 function assertStorageReady(): void {
   if (!isR2Configured()) {
@@ -41,7 +58,11 @@ async function requireOrganizationForActor(actor: AuthUser) {
   }
 
   if (!id) {
-    throw new ValidationError("No organization is available for logo settings");
+    // Create a default organization for SUPER_ADMIN when setting up the first organization
+    const defaultName = "My Company";
+    const defaultSlug = await uniqueSlug(defaultName);
+    const organization = await createOrganization({ name: defaultName, slug: defaultSlug });
+    id = organization.id;
   }
 
   assertOrganizationAccess(actor, id);
@@ -93,17 +114,29 @@ export async function getOrganizationSettings(actor: AuthUser): Promise<{
   hasLogo: boolean;
   logoUrl: string | null;
 }> {
-  const organization = await requireOrganizationForActor(actor);
-  const logoUrl = organization.logoObjectKey
+  let organization: Awaited<ReturnType<typeof requireOrganizationForActor>> | null = null;
+
+  try {
+    organization = await requireOrganizationForActor(actor);
+  } catch (error) {
+    // Allow SUPER_ADMIN to see default settings when no organization exists yet
+    if (actor.role === "SUPER_ADMIN" && error instanceof ValidationError) {
+      organization = null;
+    } else {
+      throw error;
+    }
+  }
+
+  const logoUrl = organization?.logoObjectKey
     ? await getOrganizationLogoUrl(organization.id, { expiresInSeconds: 60 * 30 })
     : null;
 
   return {
-    id: organization.id,
-    name: organization.name,
-    slug: organization.slug,
-    isActive: organization.isActive,
-    hasLogo: Boolean(organization.logoObjectKey),
+    id: organization?.id ?? "new",
+    name: organization?.name ?? "",
+    slug: organization?.slug ?? "",
+    isActive: organization?.isActive ?? false,
+    hasLogo: Boolean(organization?.logoObjectKey),
     logoUrl,
   };
 }

@@ -4,13 +4,16 @@ import {
   upsertOrganizationSettings,
 } from "../repositories/organization-setting.repository.js";
 import {
+  createOrganization,
   findOrganizationById,
+  findOrganizationBySlug,
   getDefaultOrganizationId,
 } from "../repositories/organization.repository.js";
 import type { AuthUser } from "../types/auth.js";
 import { assertOrganizationAccess } from "../utils/organization-scope.js";
 import { getOrganizationLogoUrl } from "./organization-logo.service.js";
 import { recordAudit } from "./audit.service.js";
+import { slugify } from "../utils/slug.js";
 
 const KEYS = {
   companyName: "invoice.companyName",
@@ -53,6 +56,20 @@ export type EmailTemplateSettingsView = {
   paid: { subject: string; body: string };
 };
 
+async function uniqueSlug(base: string): Promise<string> {
+  const root = slugify(base);
+  let candidate = root;
+  let suffix = 2;
+
+  while (await findOrganizationBySlug(candidate)) {
+    const extra = `-${suffix}`;
+    candidate = `${root.slice(0, Math.max(1, 60 - extra.length))}${extra}`;
+    suffix += 1;
+  }
+
+  return candidate;
+}
+
 async function resolveSettingsOrganizationId(actor: AuthUser): Promise<string> {
   if (actor.role !== "SUPER_ADMIN" && actor.role !== "ADMIN") {
     throw new ForbiddenError("You cannot manage invoice settings");
@@ -61,6 +78,13 @@ async function resolveSettingsOrganizationId(actor: AuthUser): Promise<string> {
   let id = actor.organizationId;
   if (!id && actor.role === "SUPER_ADMIN") {
     id = await getDefaultOrganizationId();
+  }
+  if (!id && actor.role === "SUPER_ADMIN") {
+    // Create a default organization for SUPER_ADMIN when setting up the first organization
+    const defaultName = "My Company";
+    const defaultSlug = await uniqueSlug(defaultName);
+    const organization = await createOrganization({ name: defaultName, slug: defaultSlug });
+    id = organization.id;
   }
   if (!id) {
     throw new ValidationError("No organization is available for settings");
