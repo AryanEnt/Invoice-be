@@ -74,32 +74,49 @@ async function resolveSettingsOrganizationId(actor: AuthUser): Promise<string> {
 }
 
 export async function getInvoiceSettings(actor: AuthUser): Promise<InvoiceSettingsView> {
-  const organizationId = await resolveSettingsOrganizationId(actor);
-  const organization = await findOrganizationById(organizationId);
-  if (!organization) {
-    throw new NotFoundError("Organization not found");
+  let organizationId: string;
+  let organization: { id: string; name: string; logoObjectKey: string | null } | null = null;
+
+  try {
+    organizationId = await resolveSettingsOrganizationId(actor);
+    organization = await findOrganizationById(organizationId);
+    if (!organization) {
+      throw new NotFoundError("Organization not found");
+    }
+  } catch (error) {
+    // Allow SUPER_ADMIN to see default settings form when no organization exists yet
+    if (actor.role === "SUPER_ADMIN" && error instanceof ValidationError) {
+      organizationId = "new";
+      organization = null;
+    } else {
+      throw error;
+    }
   }
 
-  const map = await getOrganizationSettingsMap(organizationId, [
-    KEYS.companyName,
-    KEYS.currency,
-    KEYS.language,
-    KEYS.addressLine1,
-    KEYS.addressLine2,
-    KEYS.addressCity,
-    KEYS.addressRegion,
-    KEYS.addressPostalCode,
-    KEYS.addressCountry,
-  ]);
+  const map = organization
+    ? await getOrganizationSettingsMap(organizationId, [
+        KEYS.companyName,
+        KEYS.currency,
+        KEYS.language,
+        KEYS.addressLine1,
+        KEYS.addressLine2,
+        KEYS.addressCity,
+        KEYS.addressRegion,
+        KEYS.addressPostalCode,
+        KEYS.addressCountry,
+      ])
+    : {};
 
-  const logoUrl = await getOrganizationLogoUrl(organizationId, { expiresInSeconds: 60 * 30 });
+  const logoUrl = organization
+    ? await getOrganizationLogoUrl(organizationId, { expiresInSeconds: 60 * 30 })
+    : null;
 
   return {
     organizationId,
-    organizationName: organization.name,
-    companyName: map[KEYS.companyName] ?? organization.name,
+    organizationName: organization?.name ?? "",
+    companyName: map[KEYS.companyName] ?? organization?.name ?? "",
     logoUrl,
-    hasLogo: Boolean(organization.logoObjectKey),
+    hasLogo: Boolean(organization?.logoObjectKey),
     currency: map[KEYS.currency] ?? "USD",
     language: map[KEYS.language] ?? "en",
     address: {
@@ -164,13 +181,26 @@ export async function getInvoiceCompanyName(organizationId: string): Promise<str
 export async function getEmailTemplateSettings(
   actor: AuthUser,
 ): Promise<EmailTemplateSettingsView> {
-  const organizationId = await resolveSettingsOrganizationId(actor);
-  const map = await getOrganizationSettingsMap(organizationId, [
-    KEYS.unpaidSubject,
-    KEYS.unpaidBody,
-    KEYS.paidSubject,
-    KEYS.paidBody,
-  ]);
+  let organizationId: string;
+  try {
+    organizationId = await resolveSettingsOrganizationId(actor);
+  } catch (error) {
+    // Allow SUPER_ADMIN to see default templates when no organization exists yet
+    if (actor.role === "SUPER_ADMIN" && error instanceof ValidationError) {
+      organizationId = "new";
+    } else {
+      throw error;
+    }
+  }
+
+  const map = organizationId !== "new"
+    ? await getOrganizationSettingsMap(organizationId, [
+        KEYS.unpaidSubject,
+        KEYS.unpaidBody,
+        KEYS.paidSubject,
+        KEYS.paidBody,
+      ])
+    : {};
 
   return {
     unpaid: {
